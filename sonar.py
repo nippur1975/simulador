@@ -2055,6 +2055,7 @@ def calcular_interseccion_sonar_cardumen(pos_rel_cardumen, tilt_deg, apertura_ha
 def dibujar_eco_cardumen(surface, info_interseccion,
                          sonar_centro_x, sonar_centro_y,
                          sonar_radio_pixels, max_rango_sonar_en_metros,
+                         current_gain, # Nuevo parámetro para la ganancia
                          color_base_rgb=(139, 0, 0)): # DarkRed como base
     """
     Dibuja el eco del cardumen en la pantalla del sonar.
@@ -2086,7 +2087,24 @@ def dibujar_eco_cardumen(surface, info_interseccion,
     longitud_radial_pixels = longitud_radial_m * pixel_por_metro
     # Ajuste para hacer el eco más grueso radialmente:
     # Aumentamos el mínimo, multiplicamos el valor base y aumentamos el cap relativo al radio.
-    longitud_radial_pixels = max(8, min(longitud_radial_pixels * 1.5, sonar_radio_pixels * 0.4))
+    longitud_radial_pixels_base = max(8, min(longitud_radial_pixels * 1.5, sonar_radio_pixels * 0.4))
+
+    # El ancho de la "mancha" en píxeles a la distancia del eco (cálculo base).
+    # Usamos la media anchura angular * 2 para el ancho total del arco.
+    ancho_arco_pixels_base = 2 * dist_slant_pixels * math.tan(media_anchura_angular_rad)
+    ancho_arco_pixels_base = max(5, min(ancho_arco_pixels_base, sonar_radio_pixels * 0.4)) # Limitar
+
+    # Ajuste de tamaño por ganancia
+    # Cada 0.5 de ganancia añade 0.5px, entonces 1.0 de ganancia añade 1.0px
+    aumento_px_por_ganancia = current_gain 
+
+    ancho_arco_pixels = ancho_arco_pixels_base + aumento_px_por_ganancia
+    longitud_radial_pixels = longitud_radial_pixels_base + aumento_px_por_ganancia
+
+    # Asegurar dimensiones mínimas después del ajuste de ganancia
+    ancho_arco_pixels = max(1, ancho_arco_pixels) # Mínimo 1px
+    longitud_radial_pixels = max(1, longitud_radial_pixels) # Mínimo 1px
+
 
     # Ajuste para mayor intensidad del eco principal rojizo/marrón
     # Color base (marrón rojizo oscuro): (100, 20, 20) o un marrón más puro (139,69,19) - SaddleBrown
@@ -2178,7 +2196,7 @@ def dibujar_eco_cardumen(surface, info_interseccion,
     # Incremento de tamaño para cada capa de borde (en píxeles en cada lado)
     # Haremos los bordes como contornos, no rellenos, para que se superpongan bien.
     # El grosor del contorno.
-    grosor_contorno_borde = max(1, int(2 * intensidad)) # Bordes más gruesos si el eco es intenso
+    grosor_contorno_borde = 2 # Grosor fijo de 2px para cada banda de color
     
     # El tamaño de la elipse para los bordes debe ser progresivamente mayor.
     # Empezamos desde el tamaño de la elipse del cuerpo y lo expandimos.
@@ -2188,38 +2206,30 @@ def dibujar_eco_cardumen(surface, info_interseccion,
 
     # Para dibujar contornos, necesitamos el rect de la elipse.
     # Pygame.draw.ellipse(surface, color, rect, width) -> width es el grosor del contorno.
+    # El contorno se dibuja DENTRO del rect.
 
-    # Capa Roja: Inmediatamente fuera del cuerpo
-    offset_rojo = grosor_contorno_borde # Offset desde el borde del cuerpo
-    rect_rojo = pygame.Rect(
-        ellipse_rect_local.left - offset_rojo,
-        ellipse_rect_local.top - offset_rojo,
-        ellipse_rect_local.width + 2 * offset_rojo,
-        ellipse_rect_local.height + 2 * offset_rojo
-    )
-    pygame.draw.ellipse(eco_srf, colores_borde[2], rect_rojo, grosor_contorno_borde)
+    # Borde Rojo (2px)
+    # El rect para el borde rojo debe ser más grande que el cuerpo para que el contorno quede afuera.
+    # Si el cuerpo es ellipse_rect_local, el rect para el contorno rojo necesita ser
+    # ellipse_rect_local.width + 2*grosor_contorno_borde de ancho, centrado.
+    # El primer contorno (rojo) debe rodear el cuerpo.
+    rect_borde_rojo = ellipse_rect_local.inflate(grosor_contorno_borde * 2, grosor_contorno_borde * 2)
+    pygame.draw.ellipse(eco_srf, colores_borde[2], rect_borde_rojo, grosor_contorno_borde)
 
-    # Capa Amarilla: Fuera de la roja
-    offset_amarillo = offset_rojo + grosor_contorno_borde
-    rect_amarillo = pygame.Rect(
-        ellipse_rect_local.left - offset_amarillo,
-        ellipse_rect_local.top - offset_amarillo,
-        ellipse_rect_local.width + 2 * offset_amarillo,
-        ellipse_rect_local.height + 2 * offset_amarillo
-    )
-    pygame.draw.ellipse(eco_srf, colores_borde[1], rect_amarillo, grosor_contorno_borde)
+    # Borde Amarillo (2px), fuera del rojo
+    # El rect para el borde amarillo debe ser más grande que el rect_borde_rojo
+    rect_borde_amarillo = rect_borde_rojo.inflate(grosor_contorno_borde * 2, grosor_contorno_borde * 2)
+    pygame.draw.ellipse(eco_srf, colores_borde[1], rect_borde_amarillo, grosor_contorno_borde)
     
-    # Capa Verde: Fuera de la amarilla
-    offset_verde = offset_amarillo + grosor_contorno_borde
-    rect_verde = pygame.Rect(
-        ellipse_rect_local.left - offset_verde,
-        ellipse_rect_local.top - offset_verde,
-        ellipse_rect_local.width + 2 * offset_verde,
-        ellipse_rect_local.height + 2 * offset_verde
-    )
-    pygame.draw.ellipse(eco_srf, colores_borde[0], rect_verde, grosor_contorno_borde)
+    # Borde Verde (2px), fuera del amarillo
+    rect_borde_verde = rect_borde_amarillo.inflate(grosor_contorno_borde * 2, grosor_contorno_borde * 2)
+    pygame.draw.ellipse(eco_srf, colores_borde[0], rect_borde_verde, grosor_contorno_borde)
     # --- Fin Dibujar Bordes Multicolores ---
 
+    # Ajustar srf_size si los bordes expandidos lo requieren.
+    # Esto es un poco tardío, idealmente srf_size se calcularía desde el principio
+    # para acomodar el rect_borde_verde. Por ahora, asumimos que el * 1.5 original es suficiente.
+    # Si hay problemas de clipping de los bordes en la eco_srf, habrá que revisar esto.
 
     # Rotar la superficie del eco
     # El ángulo de rotación en pygame es antihorario.
@@ -2395,6 +2405,14 @@ cardumen_simulado.x_sim = 0  # Directamente en proa
 cardumen_simulado.y_sim = 600 # A 600m hacia el "Norte" relativo del barco
 # --- Fin Inicialización del Cardumen ---
 
+# --- Estado de Inicialización Geográfica del Cardumen ---
+cardumen_posicion_geografica_inicializada = False
+# --- Fin Estado de Inicialización Geográfica del Cardumen ---
+
+# --- Variables para el Retardo del Sonido del Eco ---
+sound_play_time_cardumen = 0  # Momento en ms (pygame.time.get_ticks()) en que se debe reproducir el sonido del cardumen. 0 si no hay sonido programado.
+sound_triggered_for_cardumen_echo = False # Para evitar múltiples disparos por el mismo eco de cardumen en un barrido.
+# --- Fin Variables para el Retardo del Sonido ---
 
 while not hecho:
  
@@ -2531,6 +2549,45 @@ while not hecho:
                                    display_radius_pixels, s_max_for_update, current_unit)
     # --- End Update Marker Screen Positions ---
 
+    # --- Inicialización/Actualización de Posición Geográfica del Cardumen con NMEA ---
+    if serial_port_available and current_ship_lat_deg is not None and current_ship_lon_deg is not None:
+        if not cardumen_posicion_geografica_inicializada:
+            # NMEA acaba de activarse con una posición válida, y el cardumen aún no ha sido posicionado geográficamente.
+            distancia_sim_m = math.sqrt(cardumen_simulado.x_sim**2 + cardumen_simulado.y_sim**2)
+            # Angulo de (0,0) a (x_sim, y_sim) en el plano simulado (Norte = 0 rad, Este = PI/2 rad)
+            # atan2(dx, dy) -> atan2(x_sim, y_sim)
+            bearing_sim_rad = math.atan2(cardumen_simulado.x_sim, cardumen_simulado.y_sim)
+            # bearing_sim_deg es el rumbo relativo del cardumen respecto a la proa del barco (0° = proa)
+            # en el sistema de coordenadas simulado (donde proa es +Y).
+            # Si x_sim=0, y_sim=600 (proa), bearing_sim_rad = atan2(0,600) = 0 rad = 0 deg.
+            # Si x_sim=600, y_sim=0 (estribor), bearing_sim_rad = atan2(600,0) = PI/2 rad = 90 deg.
+            bearing_sim_deg = math.degrees(bearing_sim_rad) 
+
+            # El rumbo verdadero al cardumen es el rumbo actual del barco + el rumbo relativo simulado.
+            true_bearing_to_cardumen_deg = (current_ship_heading + bearing_sim_deg + 360) % 360
+            
+            start_point = Point(latitude=current_ship_lat_deg, longitude=current_ship_lon_deg)
+            try:
+                destination = geodesic(meters=distancia_sim_m).destination(point=start_point, bearing=true_bearing_to_cardumen_deg)
+                cardumen_simulado.lat = destination.latitude
+                cardumen_simulado.lon = destination.longitude
+                cardumen_posicion_geografica_inicializada = True
+                print(f"INFO: Cardumen inicializado geográficamente en Lat: {cardumen_simulado.lat:.4f}, Lon: {cardumen_simulado.lon:.4f} (Dist: {distancia_sim_m:.1f}m, Bearing: {true_bearing_to_cardumen_deg:.1f}° from ship at {current_ship_lat_deg:.4f},{current_ship_lon_deg:.4f} heading {current_ship_heading:.1f}°)")
+            except Exception as e_geo_init:
+                print(f"ERROR: Fallo al calcular destino geográfico inicial del cardumen: {e_geo_init}")
+                # El cardumen permanecerá en su lat/lon placeholder (0,0) hasta el próximo intento exitoso.
+                # cardumen_posicion_geografica_inicializada permanecerá False.
+
+    elif not serial_port_available or current_ship_lat_deg is None or current_ship_lon_deg is None:
+        # NMEA se ha perdido o no está disponible. Reseteamos el flag.
+        if cardumen_posicion_geografica_inicializada:
+            print("INFO: Conexión NMEA perdida o inválida. Cardumen volverá a modo simulación XY si NMEA se reactiva.")
+            # Aquí podríamos querer que x_sim, y_sim se actualicen para reflejar la última posición relativa
+            # conocida geográficamente, para una transición más suave si NMEA vuelve.
+            # Por ahora, simplemente reseteamos el flag.
+            cardumen_posicion_geografica_inicializada = False
+    # --- Fin Inicialización/Actualización de Posición Geográfica del Cardumen ---
+
     # --- Hover Logic for Target Markers ---
     ui_state['hovered_marker_index'] = None # Reset hover state each frame
     if not show_unidades_popup and not show_puerto_popup and not show_main_menu_popup: # Also check main menu
@@ -2589,18 +2646,17 @@ while not hecho:
         current_sweep_radius_pixels += sweep_increment_ppf
         if current_sweep_radius_pixels > display_radius_pixels:
             current_sweep_radius_pixels = 0 # Reset sweep
-            if sonar_ping_sound: # Play sound if loaded successfully
-                sonar_ping_sound.play()
+            sound_triggered_for_cardumen_echo = False # Permitir nuevo disparo de sonido para el próximo barrido del cardumen
+            if sonar_ping_sound: # Restaurar el sonido original del ciclo de barrido
+                sonar_ping_sound.play() 
     else:
         # If transmission is OFF, we can choose to reset the sweep
         # or leave it at its current position. Resetting is cleaner.
         current_sweep_radius_pixels = 0
         # Ensure sound is stopped if it was somehow playing or cued
-        if sonar_ping_sound and pygame.mixer.get_busy(): # Check if any channel is busy
-            sonar_ping_sound.stop() # Stop the specific sound if it's playing
-            # Alternatively, stop all sounds: pygame.mixer.stop()
-            # but stopping the specific sound is more targeted.
-
+        if sonar_ping_sound and pygame.mixer.get_busy(): 
+            sonar_ping_sound.stop() 
+            
     # --- End Sonar Sweep Animation Logic ---
     # --- End Sonar Sweep Parameter Calculation ---
 
@@ -2638,6 +2694,38 @@ while not hecho:
         max_rango_actual_metros
     )
     # --- Fin Actualización y Lógica del Cardumen ---
+
+    # --- Lógica de Programación y Reproducción del Sonido del Eco con Retardo ---
+    if menu_options_values["transmision"] == "ON" and sonar_ping_sound and \
+       'info_interseccion_cardumen' in locals() and info_interseccion_cardumen and \
+       info_interseccion_cardumen.get("intensidad_factor", 0) > 0.1: # Solo si hay un eco significativo
+
+        dist_eco_m = info_interseccion_cardumen["dist_slant_m"]
+        
+        # Convertir dist_eco_m a píxeles para comparar con current_sweep_radius_pixels
+        # Necesitamos max_rango_actual_metros y display_radius_pixels
+        if max_rango_actual_metros > 0:
+            pixel_por_metro_eco = display_radius_pixels / max_rango_actual_metros
+            dist_eco_pixels = dist_eco_m * pixel_por_metro_eco
+
+            # Comprobar si el barrido visual está "cerca" del eco y el sonido no ha sido disparado aún para este eco en este barrido
+            # Usamos un pequeño umbral para la detección (ej., +/- sweep_increment_ppf)
+            if not sound_triggered_for_cardumen_echo and \
+               abs(current_sweep_radius_pixels - dist_eco_pixels) < (sweep_increment_ppf * 2 + 5) and \
+               current_sweep_radius_pixels <= dist_eco_pixels + sweep_increment_ppf: # Asegura que el barrido no haya pasado mucho más allá
+
+                retardo_ms = (dist_eco_m / SPEED_OF_SOUND_MPS) * 1000
+                sound_play_time_cardumen = pygame.time.get_ticks() + retardo_ms
+                sound_triggered_for_cardumen_echo = True
+                # print(f"Eco CARDUMEN detectado a {dist_eco_m:.2f}m. Sonido programado en {retardo_ms:.2f}ms. Play at: {sound_play_time_cardumen}") # DEBUG
+
+    # Comprobar si es momento de reproducir un sonido programado para el cardumen
+    if sound_play_time_cardumen > 0 and pygame.time.get_ticks() >= sound_play_time_cardumen:
+        if sonar_ping_sound: # Usamos el mismo sonido por ahora
+            sonar_ping_sound.play()
+            # print(f"SONIDO CARDUMEN REPRODUCIDO en {pygame.time.get_ticks()}") # DEBUG
+        sound_play_time_cardumen = 0 # Resetear para que no se reproduzca de nuevo inmediatamente
+    # --- Fin Lógica de Sonido del Eco ---
 
 
     for evento in pygame.event.get():  # El usuario hizo algo
@@ -2985,6 +3073,20 @@ while not hecho:
 
     # Draw the center icon
     draw_center_icon(pantalla, center_x, center_y, 36, current_colors["CENTER_ICON"]) # Changed height to 36, thickness remains 5
+
+    # --- Dibujar Eco del Cardumen (MOVIDO ANTES DE ELEMENTOS DE UI SUPERPUESTOS) ---
+    if menu_options_values["transmision"] == "ON":
+        if 'info_interseccion_cardumen' in locals() and info_interseccion_cardumen:
+            dibujar_eco_cardumen(
+                pantalla,
+                info_interseccion_cardumen,
+                circle_center_x,
+                circle_center_y,
+                display_radius_pixels,
+                max_rango_actual_metros, # Asegúrate que esta variable esté disponible y actualizada aquí
+                current_gain
+            )
+    # --- Fin Dibujar Eco del Cardumen ---
 
     # --- End Display Calculated Target Data ---
 
@@ -3668,19 +3770,6 @@ while not hecho:
             show_gain_temporarily = False
     # --- End Temporary Gain Display ---
 
-    # --- Dibujar Eco del Cardumen ---
-    # (Asegurarse que sonar_centro_x, sonar_centro_y, display_radius_pixels, y max_rango_actual_metros estén definidos y actualizados)
-    if 'info_interseccion_cardumen' in locals() and info_interseccion_cardumen:
-        dibujar_eco_cardumen(
-            pantalla, # La superficie principal donde dibujar
-            info_interseccion_cardumen,
-            circle_center_x, # Centro X del display del sonar
-            circle_center_y, # Centro Y del display del sonar
-            display_radius_pixels, # Radio en píxeles del display del sonar
-            max_rango_actual_metros # Rango máximo del sonar en METROS
-        )
-    # --- Fin Dibujar Eco del Cardumen ---
-
     # --- Draw Pop-up Window (if active) ---
     if show_unidades_popup:
         popup_width = 200
@@ -4049,4 +4138,5 @@ while not hecho:
 if serial_port_available and ser is not None:
     ser.close()
 pygame.quit()
+
 
