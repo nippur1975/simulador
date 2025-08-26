@@ -57,6 +57,18 @@ def nmea_to_decimal_degrees(nmea_val_str, hemisphere):
         decimal_degrees = degrees + (minutes / 60.0)
         if hemisphere in ['S', 'W']:
             decimal_degrees *= -1
+
+        # Validate the calculated decimal degrees
+        if hemisphere in ['N', 'S']:  # It's a latitude
+            if not -90.0 <= decimal_degrees <= 90.0:
+                print(f"Invalid latitude calculated: {decimal_degrees}. Out of [-90, 90] range. Original: {nmea_val_str}{hemisphere}")
+                return None
+        elif hemisphere in ['E', 'W']:  # It's a longitude
+            # Geopy can handle longitude wrapping, but good practice to keep it in standard range.
+            if not -180.0 <= decimal_degrees <= 180.0:
+                print(f"Invalid longitude calculated: {decimal_degrees}. Out of [-180, 180] range. Original: {nmea_val_str}{hemisphere}")
+                return None
+
         return decimal_degrees
     except ValueError:
         print(f"Error converting NMEA value {nmea_val_str} to float.")
@@ -1342,6 +1354,12 @@ def handle_action_button_click(event_pos, button_rect_to_check, action_key_name)
 def draw_ship_track(surface, track_points_geo, ship_lat, ship_lon, ship_hdg_deg,
                     cc_x, cc_y, disp_radius_px, s_max_on_disp, current_disp_unit, track_color):
     if ship_lat is None or ship_lon is None:
+        return
+
+    # Safety check to prevent crash from invalid geo data that might have slipped through
+    if not -90 <= ship_lat <= 90 or not -180 <= ship_lon <= 180:
+        # This case should be rare now that nmea_to_decimal_degrees validates, but it's a good safeguard.
+        print(f"DEBUG: Invalid coordinate in draw_ship_track. Lat: {ship_lat}, Lon: {ship_lon}. Skipping draw.")
         return
 
     s_max_meters_on_display = s_max_on_disp
