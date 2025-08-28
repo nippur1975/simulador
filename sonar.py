@@ -766,9 +766,9 @@ except pygame.error as e:
 texto_latitud = "LAT / LON "
 texto_longitud = "VELOC DEL BARCO" # This is "Ship Speed" label
 texto_velocidad = "RUMBO DEL BARCO" # This is "Ship Course" label
-texto_dato_nuevo_1 = "HORA / FECHA"
+#texto_dato_nuevo_1 = "HORA / FECHA"
 # texto_dato_nuevo_2 = "RATE OF TURN" # ROT text definition removed
-texto_dato_nuevo_3 = "PITCH / ROLL"
+#texto_dato_nuevo_3 = "PITCH / ROLL"
 
 
 # Usado para gestionar cuán rápido se actualiza la pantalla
@@ -3408,50 +3408,50 @@ while not hecho:
     screen.blit(text_surface_lat_data, text_rect_lat_data)
     screen.blit(text_surface_lon_data, text_rect_lon_data)
 
-    # Slot 4: DATO NUEVO 1 - HORA / FECHA
-    # Content from the original combined_data_box_dims starts after the first three slots.
-    # Height of first 3 slots: speed (100), course (100), latlon (140, approx from y_offset_latlon to its content bottom)
-    # display_box_1_dims height was 340.
-    section2_start_y = unified_data_box_dims[1] + 340 + 10 # unified_data_box_dims[1] is 10. 10 + 340 + 10 = 360.
+    # # Slot 4: DATO NUEVO 1 - HORA / FECHA
+    # # Content from the original combined_data_box_dims starts after the first three slots.
+    # # Height of first 3 slots: speed (100), course (100), latlon (140, approx from y_offset_latlon to its content bottom)
+    # # display_box_1_dims height was 340.
+    # section2_start_y = unified_data_box_dims[1] + 340 + 10 # unified_data_box_dims[1] is 10. 10 + 340 + 10 = 360.
 
-    text_surface_db2_title = font.render(texto_dato_nuevo_1, True, current_colors["PRIMARY_TEXT"]) 
-    text_rect_db2_title = text_surface_db2_title.get_rect()
-    text_rect_db2_title.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
-    text_rect_db2_title.top = section2_start_y + 5
-    screen.blit(text_surface_db2_title, text_rect_db2_title)
+    # text_surface_db2_title = font.render(texto_dato_nuevo_1, True, current_colors["PRIMARY_TEXT"]) 
+    # text_rect_db2_title = text_surface_db2_title.get_rect()
+    # text_rect_db2_title.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
+    # text_rect_db2_title.top = section2_start_y + 5
+    # screen.blit(text_surface_db2_title, text_rect_db2_title)
 
-    text_surface_zda_time = font_data_medium.render(zda_time_str, True, current_colors["PRIMARY_TEXT"]) 
-    text_rect_zda_time = text_surface_zda_time.get_rect()
-    text_rect_zda_time.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
-    text_rect_zda_time.top = text_rect_db2_title.bottom + 3 
-    screen.blit(text_surface_zda_time, text_rect_zda_time)
+    # text_surface_zda_time = font_data_medium.render(zda_time_str, True, current_colors["PRIMARY_TEXT"]) 
+    # text_rect_zda_time = text_surface_zda_time.get_rect()
+    # text_rect_zda_time.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
+    # text_rect_zda_time.top = text_rect_db2_title.bottom + 3 
+    # screen.blit(text_surface_zda_time, text_rect_zda_time)
 
-    text_surface_zda_date = font_data_medium.render(zda_date_str, True, current_colors["PRIMARY_TEXT"]) 
-    text_rect_zda_date = text_surface_zda_date.get_rect()
-    text_rect_zda_date.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
-    text_rect_zda_date.top = text_rect_zda_time.bottom + 3 
-    screen.blit(text_surface_zda_date, text_rect_zda_date)
+    # text_surface_zda_date = font_data_medium.render(zda_date_str, True, current_colors["PRIMARY_TEXT"]) 
+    # text_rect_zda_date = text_surface_zda_date.get_rect()
+    # text_rect_zda_date.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
+    # text_rect_zda_date.top = text_rect_zda_time.bottom + 3 
+    # screen.blit(text_surface_zda_date, text_rect_zda_date)
 
-    # Slot 5: DATO NUEVO 3 - PITCH / ROLL (Moved up)
-    y_start_pitch_roll = text_rect_zda_date.bottom + 18 # Start after HORA/FECHA (relative positioning)
+    # # Slot 5: DATO NUEVO 3 - PITCH / ROLL (Moved up)
+    # y_start_pitch_roll = text_rect_zda_date.bottom + 18 # Start after HORA/FECHA (relative positioning)
 
-    text_surface_db4_title = font.render(texto_dato_nuevo_3, True, current_colors["PRIMARY_TEXT"]) 
-    text_rect_db4_title = text_surface_db4_title.get_rect()
-    text_rect_db4_title.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
-    text_rect_db4_title.top = y_start_pitch_roll
-    screen.blit(text_surface_db4_title, text_rect_db4_title)
+    # text_surface_db4_title = font.render(texto_dato_nuevo_3, True, current_colors["PRIMARY_TEXT"]) 
+    # text_rect_db4_title = text_surface_db4_title.get_rect()
+    # text_rect_db4_title.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
+    # text_rect_db4_title.top = y_start_pitch_roll
+    # screen.blit(text_surface_db4_title, text_rect_db4_title)
 
-    text_surface_att_pitch = font_data_medium.render(att_pitch_str, True, current_colors["PRIMARY_TEXT"]) 
-    text_rect_att_pitch = text_surface_att_pitch.get_rect()
-    text_rect_att_pitch.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
-    text_rect_att_pitch.top = text_rect_db4_title.bottom + 3 
-    screen.blit(text_surface_att_pitch, text_rect_att_pitch)
+    # text_surface_att_pitch = font_data_medium.render(att_pitch_str, True, current_colors["PRIMARY_TEXT"]) 
+    # text_rect_att_pitch = text_surface_att_pitch.get_rect()
+    # text_rect_att_pitch.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
+    # text_rect_att_pitch.top = text_rect_db4_title.bottom + 3 
+    # screen.blit(text_surface_att_pitch, text_rect_att_pitch)
 
-    text_surface_att_roll = font_data_medium.render(att_roll_str, True, current_colors["PRIMARY_TEXT"]) 
-    text_rect_att_roll = text_surface_att_roll.get_rect()
-    text_rect_att_roll.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
-    text_rect_att_roll.top = text_rect_att_pitch.bottom + 3 
-    screen.blit(text_surface_att_roll, text_rect_att_roll)
+    # text_surface_att_roll = font_data_medium.render(att_roll_str, True, current_colors["PRIMARY_TEXT"]) 
+    # text_rect_att_roll = text_surface_att_roll.get_rect()
+    # text_rect_att_roll.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
+    # text_rect_att_roll.top = text_rect_att_pitch.bottom + 3 
+    # screen.blit(text_surface_att_roll, text_rect_att_roll)
     
     # Slot 6: DATO NUEVO 2 - RATE OF TURN -- REMOVED
     # text_surface_db3_title = font.render(texto_dato_nuevo_2, True, current_colors["PRIMARY_TEXT"]) # texto_dato_nuevo_2 is removed
@@ -3487,7 +3487,7 @@ while not hecho:
     button_unidades_rect.width = button_width
     button_unidades_rect.height = button_unidades_text_surface.get_height() + (2 * button_internal_padding_y)
     button_unidades_rect.left = unified_data_box_dims[0] + box_internal_padding 
-    button_unidades_rect.top = text_rect_att_roll.bottom + 15 # Relative positioning still works
+    button_unidades_rect.top = text_rect_lon_data.bottom + 15
 
     if not show_unidades_popup and not show_puerto_popup: # Hide if either popup is active over this area
         pygame.draw.rect(pantalla, current_colors["BUTTON_BG"], button_unidades_rect) 
@@ -4037,8 +4037,7 @@ while not hecho:
         popup_internal_padding_x = 15 
         dropdown_height = 25
         dropdown_item_height = 20
-
-        # COM Port Selection
+ # COM Port Selection
         pantalla.blit(puerto_popup_com_label_surf, (puerto_popup_main_rect.left + popup_internal_padding_x, current_y_offset_puerto)) # Text color BLANCO
         puerto_popup_select_port_rect.topleft = (puerto_popup_main_rect.left + popup_internal_padding_x + puerto_popup_com_label_surf.get_width() + 10, current_y_offset_puerto -2)
         puerto_popup_select_port_rect.width = puerto_popup_main_rect.width - (popup_internal_padding_x * 2) - puerto_popup_com_label_surf.get_width() - 10
@@ -4047,4 +4046,252 @@ while not hecho:
         pygame.draw.rect(pantalla, BLANCO, puerto_popup_select_port_rect, 1)
         port_display_text = selected_com_port_in_popup if selected_com_port_in_popup else "Seleccionar..."
         port_display_surf = font.render(port_display_text, True, BLANCO) # Text in dropdown BLANCO
-        pantalla.blit(port_display_surf, port_display_surf.get_rect(centery=puerto
+        pantalla.blit(port_display_surf, port_display_surf.get_rect(centery=puerto_popup_select_port_rect.centery, left=puerto_popup_select_port_rect.left + 5))
+
+        current_y_offset_puerto += dropdown_height + 5 
+
+        if show_com_port_dropdown:
+            list_box_x = puerto_popup_select_port_rect.left
+            list_box_y = puerto_popup_select_port_rect.bottom + 2
+            list_box_width = puerto_popup_select_port_rect.width
+            max_dropdown_list_height = 100 
+            
+            puerto_popup_port_list_item_rects.clear()
+            temp_y_list_item = list_box_y
+            actual_list_height = min(len(available_com_ports_list) * dropdown_item_height, max_dropdown_list_height)
+            if not available_com_ports_list: actual_list_height = dropdown_item_height 
+            
+            pygame.draw.rect(pantalla, NEGRO, (list_box_x, list_box_y, list_box_width, actual_list_height)) # Dropdown list NEGRO/BLANCO
+            pygame.draw.rect(pantalla, BLANCO, (list_box_x, list_box_y, list_box_width, actual_list_height),1)
+
+            if not available_com_ports_list:
+                no_ports_surf = font.render("No hay puertos disponibles", True, GRIS_MEDIO) # GRIS_MEDIO for disabled text
+                pantalla.blit(no_ports_surf, no_ports_surf.get_rect(centerx=list_box_x + list_box_width // 2, top=temp_y_list_item + 2))
+            else:
+                for i, port_name in enumerate(available_com_ports_list):
+                    if temp_y_list_item + dropdown_item_height > list_box_y + max_dropdown_list_height:
+                        break 
+                    item_rect = pygame.Rect(list_box_x, temp_y_list_item, list_box_width, dropdown_item_height)
+                    puerto_popup_port_list_item_rects.append(item_rect)
+                    item_color = BLANCO # Default item color BLANCO
+                    if port_name == selected_com_port_in_popup: 
+                        item_color = VERDE # Selected item VERDE
+                    port_item_surf = font.render(port_name, True, item_color)
+                    pantalla.blit(port_item_surf, port_item_surf.get_rect(centery=item_rect.centery, left=item_rect.left + 5))
+                    temp_y_list_item += dropdown_item_height
+            current_y_offset_puerto = list_box_y + actual_list_height + 10 
+        else:
+             current_y_offset_puerto = puerto_popup_select_port_rect.bottom + 10
+
+
+        # Baud Rate Selection
+        pantalla.blit(puerto_popup_baud_label_surf, (puerto_popup_main_rect.left + popup_internal_padding_x, current_y_offset_puerto)) # Text color BLANCO
+        puerto_popup_select_baud_rect.topleft = (puerto_popup_main_rect.left + popup_internal_padding_x + puerto_popup_baud_label_surf.get_width() + 10, current_y_offset_puerto - 2)
+        puerto_popup_select_baud_rect.width = puerto_popup_main_rect.width - (popup_internal_padding_x * 2) - puerto_popup_baud_label_surf.get_width() - 10
+        puerto_popup_select_baud_rect.height = dropdown_height
+        pygame.draw.rect(pantalla, NEGRO, puerto_popup_select_baud_rect) # Dropdown box NEGRO/BLANCO
+        pygame.draw.rect(pantalla, BLANCO, puerto_popup_select_baud_rect, 1)
+        baud_display_surf = font.render(str(selected_baud_rate_in_popup), True, BLANCO) # Text in dropdown BLANCO
+        pantalla.blit(baud_display_surf, baud_display_surf.get_rect(centery=puerto_popup_select_baud_rect.centery, left=puerto_popup_select_baud_rect.left + 5))
+        
+        current_y_offset_puerto += dropdown_height + 5
+
+        if show_baud_rate_dropdown:
+            list_box_x = puerto_popup_select_baud_rect.left
+            list_box_y = puerto_popup_select_baud_rect.bottom + 2
+            list_box_width = puerto_popup_select_baud_rect.width
+            max_dropdown_list_height = 100 
+            
+            puerto_popup_baud_list_item_rects.clear()
+            temp_y_list_item = list_box_y
+            actual_list_height = min(len(available_baud_rates_list) * dropdown_item_height, max_dropdown_list_height)
+            pygame.draw.rect(pantalla, NEGRO, (list_box_x, list_box_y, list_box_width, actual_list_height)) # Dropdown list NEGRO/BLANCO
+            pygame.draw.rect(pantalla, BLANCO, (list_box_x, list_box_y, list_box_width, actual_list_height),1)
+
+            for i, baud_val in enumerate(available_baud_rates_list):
+                if temp_y_list_item + dropdown_item_height > list_box_y + max_dropdown_list_height:
+                    break 
+                item_rect = pygame.Rect(list_box_x, temp_y_list_item, list_box_width, dropdown_item_height)
+                puerto_popup_baud_list_item_rects.append(item_rect)
+                item_color = BLANCO # Default item color BLANCO
+                if baud_val == selected_baud_rate_in_popup: item_color = VERDE # Selected item VERDE
+                
+                baud_item_surf = font.render(str(baud_val), True, item_color)
+                pantalla.blit(baud_item_surf, baud_item_surf.get_rect(centery=item_rect.centery, left=item_rect.left + 5))
+                temp_y_list_item += dropdown_item_height
+            current_y_offset_puerto = list_box_y + actual_list_height + 10
+        else:
+            current_y_offset_puerto = puerto_popup_select_baud_rect.bottom + 10
+
+        # Status Message
+        if puerto_popup_message:
+            msg_surf = font.render(puerto_popup_message, True, BLANCO) # Message text BLANCO
+            msg_rect = msg_surf.get_rect(centerx=puerto_popup_main_rect.centerx, top=current_y_offset_puerto)
+            pantalla.blit(msg_surf, msg_rect)
+            current_y_offset_puerto = msg_rect.bottom + 10
+        
+        # Buttons (Apply, Cancel) 
+        button_width_puerto = 100 # Renamed to avoid conflict
+        button_height_puerto = 30 # Renamed
+        gap_between_buttons_puerto = 10 # Renamed
+        
+        puerto_popup_cancel_button_rect.width = button_width_puerto
+        puerto_popup_cancel_button_rect.height = button_height_puerto
+        puerto_popup_cancel_button_rect.bottom = puerto_popup_main_rect.bottom - popup_internal_padding_x 
+        puerto_popup_cancel_button_rect.right = puerto_popup_main_rect.centerx - (gap_between_buttons_puerto / 2)
+        pygame.draw.rect(pantalla, NEGRO, puerto_popup_cancel_button_rect) # Button BG NEGRO
+        pygame.draw.rect(pantalla, VERDE, puerto_popup_cancel_button_rect, 1) # Button Border VERDE
+        pantalla.blit(puerto_popup_cancel_text_surf, puerto_popup_cancel_text_surf.get_rect(center=puerto_popup_cancel_button_rect.center)) # Text BLANCO from re-render
+
+        puerto_popup_apply_button_rect.width = button_width_puerto
+        puerto_popup_apply_button_rect.height = button_height_puerto
+        puerto_popup_apply_button_rect.bottom = puerto_popup_main_rect.bottom - popup_internal_padding_x 
+        puerto_popup_apply_button_rect.left = puerto_popup_main_rect.centerx + (gap_between_buttons_puerto / 2)
+        pygame.draw.rect(pantalla, NEGRO, puerto_popup_apply_button_rect) # Button BG NEGRO
+        pygame.draw.rect(pantalla, VERDE, puerto_popup_apply_button_rect, 1) # Button Border VERDE
+        pantalla.blit(puerto_popup_apply_text_surf, puerto_popup_apply_text_surf.get_rect(center=puerto_popup_apply_button_rect.center)) # Text BLANCO from re-render
+    # --- End Draw "Puerto" Pop-up Window ---
+
+    # --- Draw Main Menu Pop-up Panel ---
+    if show_main_menu_popup:
+        menu_panel_width = 300  # Fixed width
+        menu_panel_margin_top = 10
+        menu_panel_margin_right = 10
+        menu_panel_internal_padding_top = 10 # Padding inside the panel, above title
+        menu_panel_internal_padding_bottom = 15 # Padding inside the panel, below last item
+        spacing_between_items = 8 # Consistent spacing for height calculation
+        
+        _menu_item_row_h = font_menu_item.get_linesize() + 4 # Adjusted item height for new font
+        _base_dropdown_item_h = font_menu_item.get_linesize() + 2
+
+        # --- Calculate Content Height ---
+        _content_total_h = 0 
+        # No title, start with top padding for the first item
+        # _content_total_h += font_large.get_height() + 15 # title + its bottom padding (15 is from current_menu_y_offset = title_menu_rect.bottom + 15)
+        
+        _all_menu_items_config = [
+            ("dropdown", "potencia_tx", "POTENCIA TX:", range(1, 11), None),
+            ("dropdown", "long_impulso", "LONG IMPULSO:", range(1, 11), None),
+            ("dropdown", "ciclo_tx", "CICLO TX:", range(1, 11), None),
+            ("dropdown", "tvg_proximo", "TVG PROXIMO:", range(1, 11), None),
+            ("dropdown", "tvg_lejano", "TVG LEJANO:", range(1, 11), None),
+            ("dropdown", "cag", "CAG:", range(1, 11), None),
+            ("dropdown", "cag_2", "2° CAG:", range(1, 11), None),
+            ("dropdown", "limitar_ruido", "LIMITAR RUIDO:", range(1, 11), None),
+            ("square", "curva_color", "CURVA COLOR:", [str(i) for i in range(1, 5)], "ROJO"),
+            ("square", "respuesta_color", "RESPUESTA COLOR:", [str(i) for i in range(1, 5)], "ROJO"),
+            ("dropdown", "anular_color", "ANULAR COLOR:", range(1, 11), None),
+            ("dropdown", "promedio_eco", "PROMEDIO ECO:", range(1, 4), None),
+            ("dropdown", "rechazo_interf", "RECHAZO INTERF:", range(1, 4), None),
+            ("square", "angulo_haz_hor", "ANGULO HAZ HOR:", ["ANCHO", "ESTRECHO"], "ROJO"),
+            ("square", "angulo_haz_ver", "ANGULO HAZ VER:", ["ANCHO", "ESTRECHO"], "ROJO"),
+            ("square", "color_menu", "COLOR:", [str(i) for i in range(1, 5)], "VERDE_CLARO"),
+            # BORRAR MARCAS items are action buttons, not value states here
+            # ("dropdown", "nivel_alarma", "NIVEL ALARMA:", range(1,11), None), # REMOVED
+            # ("square", "explor_auto", "EXPLOR AUTO:", ["ON", "OFF"], "VERDE_CLARO"), # REMOVED
+            # ("dropdown", "sector_explor", "SECTOR EXPLOR:", ["±10°", "±20°", "±30°", "±60°", "±90°", "±170°"], None), # REMOVED
+            # ("square", "inclin_auto", "INCLIN AUTO:", ["ON", "OFF"], "VERDE_CLARO"), # REMOVED
+            # ("dropdown", "angulo_inclin", "ANGULO INCLIN:", ["±2-10°", "±2-20°", "±2-30°", "±2-40°", "±2-55°"], None), # REMOVED
+            ("square", "transmision", "TRANSMISION:", ["ON", "OFF"], "VERDE_CLARO"),
+            ("dropdown", "volumen_audio", "VOLUMEN AUDIO:", range(0, 11), None), # Changed range to 0-10
+        ]
+        
+        for item_config_type, _, _, _, _ in _all_menu_items_config:
+            _content_total_h += _menu_item_row_h + spacing_between_items
+        
+        # Subtract one spacing_between_items as the last item doesn't have spacing *after* it before bottom padding
+        if len(_all_menu_items_config) > 0: # if there's any content
+             _content_total_h -= spacing_between_items # remove last spacing if items exist
+
+
+        calculated_panel_height = menu_panel_internal_padding_top + _content_total_h + menu_panel_internal_padding_bottom
+        
+        menu_panel_rect = pygame.Rect(
+            dimensiones[0] - menu_panel_width - menu_panel_margin_right, # Right aligned
+            menu_panel_margin_top,
+            menu_panel_width,
+            min(calculated_panel_height, dimensiones[1] - menu_panel_margin_top - 10) # Max height, 10px margin bottom
+        )
+        # Ensure minimum height if calculated is too small or negative due to screen constraints
+        menu_panel_rect.height = max(menu_panel_rect.height, 50)
+
+        # Use GRIS_MEDIO for menu panel background, BLANCO for border (consistent for now)
+        pygame.draw.rect(pantalla, GRIS_MEDIO, menu_panel_rect) 
+        pygame.draw.rect(pantalla, BLANCO, menu_panel_rect, 2)   
+
+        # Title removed
+        
+      
+        global_menu_panel_rect = menu_panel_rect 
+
+        # --- Menu Content Drawing ---
+        current_menu_y_offset = menu_panel_rect.top + menu_panel_internal_padding_top 
+        menu_item_height = _menu_item_row_h 
+        menu_padding_x = 10
+        
+        interactive_menu_item_rects = {}
+        base_dropdown_item_height = _base_dropdown_item_h 
+        color_palette_map = {"NEGRO": NEGRO, "BLANCO": BLANCO} 
+        square_size_calc = int(font_menu_item.get_height() * 2.0) 
+        color_palette_map_sq = {"NEGRO": NEGRO, "BLANCO": BLANCO, "ROJO": ROJO, "VERDE_CLARO": VERDE_CLARO}
+
+        for item_type, key, label, item_source_or_labels, highlight_color_key in _all_menu_items_config:
+            current_value = menu_options_values[key]
+            occupied_h = 0
+
+            if item_type == "dropdown":
+                is_open = menu_dropdown_states[key]
+                drawn_elements, occupied_h = draw_single_dropdown_option(
+                    pantalla, key, label, current_value, is_open,
+                    current_menu_y_offset, menu_panel_rect, font_menu_item, 
+                    color_palette_map,
+                    menu_item_height, 
+                    base_dropdown_item_height, 
+                    item_source_or_labels 
+                )
+                interactive_menu_item_rects[key] = drawn_elements
+            elif item_type == "square":
+                item_values = item_source_or_labels 
+                drawn_sq_rects, occupied_h = draw_square_selector_option(
+                    pantalla, key, label, current_value, item_source_or_labels,
+                    current_menu_y_offset, menu_panel_rect, font_menu_item,
+                    color_palette_map_sq, menu_item_height, square_size_calc, 
+                    color_palette_map_sq[highlight_color_key]
+                )
+                interactive_menu_item_rects[key] = {'squares': drawn_sq_rects, 'values': item_values}
+            
+            current_menu_y_offset += occupied_h + spacing_between_items
+        
+        # --- ASIGNAR AJUSTE (Placeholder) - REMOVED ---
+        # asignar_label_text = "ASIGNAR AJUSTE:"
+        # asignar_label_surf = font_menu_item.render(asignar_label_text, True, BLANCO) 
+        # asignar_label_rect = asignar_label_surf.get_rect(topleft=(menu_panel_rect.left + menu_padding_x, current_menu_y_offset))
+        # pantalla.blit(asignar_label_surf, asignar_label_rect)
+        # current_menu_y_offset += asignar_label_surf.get_height() + spacing_between_items
+
+        # f_key_options = ["TECLA F1", "TECLA F2", "TECLA F3", "TECLA F4"] # REMOVED
+        # for f_key_text in f_key_options:
+            # f_key_surf = font_menu_item.render(f_key_text, True, GRIS_MEDIO) 
+            # f_key_rect = f_key_surf.get_rect(topleft=(menu_panel_rect.left + menu_padding_x + 20, current_menu_y_offset))
+            # pantalla.blit(f_key_surf, f_key_rect)
+            # current_menu_y_offset += f_key_surf.get_height() + 5 
+
+
+    # --- End Draw Main Menu Pop-up Panel ---
+
+    # Avancemos y actualicemos la pantalla con lo que hemos dibujado.
+    pygame.display.flip()
+
+    # Limitamos a 60 fotogramas por segundo
+    reloj.tick(60)
+
+if serial_port_available and ser is not None:
+    ser.close()
+
+# --- Save Settings on Exit ---
+save_settings()
+# ---
+pygame.quit()
+
+
+
