@@ -5,6 +5,9 @@ import numpy as np # Importar NumPy
 import os # Needed for path manipulation
 import serial # Already present
 import serial.tools.list_ports # For COM port detection
+import functools
+import operator
+import json
 from pygame.locals import *
 from geopy.distance import geodesic
 from geopy.point import Point
@@ -45,6 +48,32 @@ zda_date_str = "N/A"
 att_pitch_str = "N/A"
 att_roll_str = "N/A"
 
+def is_valid_nmea_checksum(sentence):
+    """
+    Validates the checksum of an NMEA sentence.
+    Returns True if the checksum is valid or if the sentence has no checksum.
+    Returns False if the checksum is present but invalid.
+    """
+    if '*' not in sentence:
+        return True
+
+    data_part, checksum_part = sentence.rsplit('*', 1)
+    
+    if not checksum_part or not all(c in '0123456789ABCDEFabcdef' for c in checksum_part):
+        return False
+
+    if data_part.startswith('$'):
+        data_part = data_part[1:]
+
+    calculated_checksum = functools.reduce(operator.xor, (ord(c) for c in data_part), 0)
+    
+    try:
+        received_checksum = int(checksum_part, 16)
+    except ValueError:
+        return False
+
+    return calculated_checksum == received_checksum
+
 # Helper function to convert NMEA lat/lon (DDDMM.MMMM, H) to decimal degrees
 def nmea_to_decimal_degrees(nmea_val_str, hemisphere):
     """Converts NMEA format latitude or longitude to decimal degrees."""
@@ -57,6 +86,18 @@ def nmea_to_decimal_degrees(nmea_val_str, hemisphere):
         decimal_degrees = degrees + (minutes / 60.0)
         if hemisphere in ['S', 'W']:
             decimal_degrees *= -1
+
+        # Validate the calculated decimal degrees
+        if hemisphere in ['N', 'S']:  # It's a latitude
+            if not -90.0 <= decimal_degrees <= 90.0:
+                print(f"Invalid latitude calculated: {decimal_degrees}. Out of [-90, 90] range. Original: {nmea_val_str}{hemisphere}")
+                return None
+        elif hemisphere in ['E', 'W']:  # It's a longitude
+            # Geopy can handle longitude wrapping, but good practice to keep it in standard range.
+            if not -180.0 <= decimal_degrees <= 180.0:
+                print(f"Invalid longitude calculated: {decimal_degrees}. Out of [-180, 180] range. Original: {nmea_val_str}{hemisphere}")
+                return None
+
         return decimal_degrees
     except ValueError:
         print(f"Error converting NMEA value {nmea_val_str} to float.")
@@ -109,7 +150,7 @@ def parse_rot(sentence): # This function is no longer called but kept for now
     global rot_str
     try:
         parts = sentence.split(',')
-        if len(parts) > 2: 
+        if len(parts) > 2:  
             status = parts[2].strip().upper()
             if status == 'A':
                 rate_of_turn_field = parts[1] 
@@ -136,9 +177,9 @@ def parse_fec_gpatt(sentence):
     global att_pitch_str, att_roll_str
     try:
         parts = sentence.split(',')
-        if len(parts) > 4: 
+        if len(parts) > 4:  
             pitch_val_str = parts[3]
-            roll_val_full_str = parts[4] 
+            roll_val_full_str = parts[4]  
             roll_val_str = roll_val_full_str.split('*')[0]
             if pitch_val_str:
                 try:
@@ -296,12 +337,12 @@ def parse_hdg(sentence):
     global heading_str, current_ship_heading
     try:
         parts = sentence.split(',')
-        if len(parts) > 1 and parts[1]: 
+        if len(parts) > 1 and parts[1]:  
             raw_hdg_value = parts[1]
             try:
                 current_ship_heading = float(raw_hdg_value)
                 heading_display_text = f"{raw_hdg_value}"
-                if len(parts) > 4 and parts[3] and parts[4]: 
+                if len(parts) > 4 and parts[3] and parts[4]:  
                     heading_display_text += f" (Mag Var: {parts[3]} {parts[4]})"
                 else:
                     heading_display_text += " (No Mag Var)"
@@ -334,6 +375,69 @@ screen = pygame.display.set_mode(dimensiones, pygame.RESIZABLE)
 
 
 
+# --- Settings Persistence ---
+CONFIG_FILE = "config.json"
+
+def save_settings():
+    """Saves current settings to a JSON file."""
+    settings_to_save = {
+        'port': puerto,
+        'baudrate': baudios,
+        'gain': current_gain,
+        'range_index': current_range_index,
+        'tilt_angle': current_tilt_angle,
+        'unit': current_unit,
+        'menu_options': menu_options_values
+    }
+    try:
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(settings_to_save, f, indent=4)
+        # print("DEBUG: Settings saved successfully.") # Optional
+    except IOError as e:
+        print(f"Error: No se pudo guardar la configuración en {CONFIG_FILE}: {e}")
+
+def load_settings():
+    """Loads settings from a JSON file and applies them."""
+    global puerto, baudios, current_gain, current_range_index, current_tilt_angle, current_unit, menu_options_values, \
+             active_color_scheme_idx, current_colors, current_volume, sonar_ping_sound
+    
+    try:
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, 'r') as f:
+                loaded_settings = json.load(f)
+            
+            print(f"INFO: Cargando configuración desde {CONFIG_FILE}")
+            
+            # Apply loaded settings with validation and fallbacks
+            puerto = loaded_settings.get('port', puerto)
+            baudios = loaded_settings.get('baudrate', baudios)
+            current_gain = loaded_settings.get('gain', current_gain)
+            current_range_index = loaded_settings.get('range_index', current_range_index)
+            current_tilt_angle = loaded_settings.get('tilt_angle', current_tilt_angle)
+            current_unit = loaded_settings.get('unit', current_unit)
+            
+            # Load menu options, which is a dictionary
+            if 'menu_options' in loaded_settings and isinstance(loaded_settings['menu_options'], dict):
+                menu_options_values.update(loaded_settings['menu_options'])
+
+            # After loading menu_options_values, we need to re-apply settings that depend on it.
+            # 1. Color Scheme
+            active_color_scheme_idx = menu_options_values.get("color_menu", active_color_scheme_idx)
+            current_colors = color_schemes.get(active_color_scheme_idx, color_schemes[3]) # Fallback to default scheme
+
+            # 2. Audio Volume
+            current_volume = menu_options_values.get("volumen_audio", current_volume * 10) / 10.0
+            if sonar_ping_sound:
+                sonar_ping_sound.set_volume(current_volume)
+
+    except (IOError, json.JSONDecodeError) as e:
+        print(f"Advertencia: No se pudo cargar la configuración desde {CONFIG_FILE}. Se usarán los valores por defecto. Error: {e}")
+    except Exception as e:
+        print(f"Error inesperado al cargar la configuración: {e}. Se usarán los valores por defecto.")
+
+# --- End Settings Persistence ---
+
+
 # Definimos algunos colores
 # Estos se convertirán en los colores por defecto (esquema 3)
 DEFAULT_NEGRO = (0, 0, 0)
@@ -356,24 +460,24 @@ color_schemes = {
         "TARGET_BASE": (188, 238, 104),
         "TARGET_HOVER": (255, 100, 100),   # Rojo para hover (podría ser un ámbar más brillante también)
         "COMPASS_ROSE": (188, 238, 104),
-        "DATA_PANEL_BG": (30, 60, 30),     # Un verde aún más oscuro para el panel
+        "DATA_PANEL_BG": (30, 60, 30),      # Un verde aún más oscuro para el panel
         "DATA_PANEL_BORDER": (107, 142, 35),
         "BUTTON_BG": (30, 60, 30),
         "BUTTON_BORDER": (107, 142, 35),
         "CURSOR_CROSS": (188, 238, 104),
-        "RANGE_RINGS": (107, 142, 35),     # Verde oliva para los anillos
-        "SHIP_TRACK": (152, 251, 152),     # Verde pálido para la estela
+        "RANGE_RINGS": (107, 142, 35),      # Verde oliva para los anillos
+        "SHIP_TRACK": (152, 251, 152),      # Verde pálido para la estela
         "CENTER_ICON": (188, 238, 104),
         "MENU_ITEM_HIGHLIGHT": DEFAULT_VERDE_CLARO, # Mantener este por ahora o definir uno específico
         "MENU_ITEM_RED_HIGHLIGHT": DEFAULT_ROJO, # Mantener este por ahora o definir uno específico
     },
     2: { # Verde Claro
-        "BACKGROUND": (144, 238, 144),     # Verde claro (LightGreen)
-        "PRIMARY_TEXT": (0, 100, 0),       # Verde oscuro para texto
+        "BACKGROUND": (144, 238, 144),      # Verde claro (LightGreen)
+        "PRIMARY_TEXT": (0, 100, 0),        # Verde oscuro para texto
         "ACCENT_ELEMENT": (34, 139, 34),   # Verde bosque
-        "SWEEP": (60, 179, 113),           # Verde mar medio
+        "SWEEP": (60, 179, 113),            # Verde mar medio
         "TARGET_BASE": (0, 100, 0),
-        "TARGET_HOVER": (255, 0, 0),       # Rojo estándar para hover
+        "TARGET_HOVER": (255, 0, 0),        # Rojo estándar para hover
         "COMPASS_ROSE": (0, 100, 0),
         "DATA_PANEL_BG": (224, 255, 224),  # Verde muy pálido (Honeydew)
         "DATA_PANEL_BORDER": (34, 139, 34),
@@ -406,20 +510,20 @@ color_schemes = {
         "MENU_ITEM_RED_HIGHLIGHT": DEFAULT_ROJO,
     },
     4: { # Azul Claro
-        "BACKGROUND": (173, 216, 230),     # Celeste (LightBlue)
-        "PRIMARY_TEXT": (0, 0, 128),       # Azul marino para texto
+        "BACKGROUND": (173, 216, 230),      # Celeste (LightBlue)
+        "PRIMARY_TEXT": (0, 0, 128),        # Azul marino para texto
         "ACCENT_ELEMENT": (70, 130, 180),  # Azul acero
         "SWEEP": (135, 206, 250),          # Azul cielo claro
         "TARGET_BASE": (0, 0, 128),
-        "TARGET_HOVER": (255, 0, 0),       # Rojo estándar
+        "TARGET_HOVER": (255, 0, 0),        # Rojo estándar
         "COMPASS_ROSE": (0, 0, 128),
         "DATA_PANEL_BG": (220, 240, 255),  # Azul muy pálido
         "DATA_PANEL_BORDER": (70, 130, 180),
         "BUTTON_BG": (220, 240, 255),
         "BUTTON_BORDER": (70, 130, 180),
         "CURSOR_CROSS": (0, 0, 128),
-        "RANGE_RINGS": (70, 130, 180),     # Azul acero para los anillos
-        "SHIP_TRACK": (135, 206, 250),     # Azul cielo claro para la estela
+        "RANGE_RINGS": (70, 130, 180),      # Azul acero para los anillos
+        "SHIP_TRACK": (135, 206, 250),      # Azul cielo claro para la estela
         "CENTER_ICON": (0, 0, 128),
         "MENU_ITEM_HIGHLIGHT": DEFAULT_VERDE_CLARO, # Podrían ser azules también
         "MENU_ITEM_RED_HIGHLIGHT": DEFAULT_ROJO,
@@ -440,9 +544,9 @@ current_colors = color_schemes[active_color_scheme_idx]
 
 NEGRO = DEFAULT_NEGRO # Usado para el fondo de botones de popup y texto en algunos casos.
 BLANCO = DEFAULT_BLANCO # Usado ampliamente para texto.
-VERDE = DEFAULT_VERDE   # Usado para bordes de panel, etc.
-ROJO = DEFAULT_ROJO     # Para hover de targets, etc.
-AZUL = DEFAULT_AZUL     # Para fondo principal.
+VERDE = DEFAULT_VERDE    # Usado para bordes de panel, etc.
+ROJO = DEFAULT_ROJO      # Para hover de targets, etc.
+AZUL = DEFAULT_AZUL      # Para fondo principal.
 CELESTE = DEFAULT_CELESTE # Para barrido.
 VERDE_CLARO = DEFAULT_VERDE_CLARO # Para selectores cuadrados de menú.
 GRIS_MEDIO = DEFAULT_GRIS_MEDIO # Para fondo de popups.
@@ -569,35 +673,35 @@ interactive_menu_item_rects = {} # Will store rects of interactive elements in t
 
 # Default values for menu options
 menu_options_values = {
-    "potencia_tx": 5,           # 1-10
-    "long_impulso": 5,          # 1-10
-    "ciclo_tx": 5,              # 1-10
-    "tvg_proximo": 5,           # 1-10
-    "tvg_lejano": 5,            # 1-10
-    "cag": 5,                   # 1-10
-    "cag_2": 5,                 # 1-10 (2° CAG)
-    "limitar_ruido": 5,         # 1-10
-    "curva_color": 1,           # 1-4 (Square Red)
-    "respuesta_color": 1,       # 1-4 (Square Red)
-    "anular_color": 0,          # 0 (Placeholder, may become toggle or specific values later)
-    "promedio_eco": 1,          # 1-3 (Dropdown)
-    "rechazo_interf": 1,        # 1-3 (Dropdown)
-    "angulo_haz_hor": "ANCHO",  # "ANCHO", "ESTRECHO" (Square Red)
-    "angulo_haz_ver": "ANCHO",  # "ANCHO", "ESTRECHO" (Square Red)
-    "color_menu": 1,            # 1-4 (Square Green Light) - Key for "COLOR" option
+    "potencia_tx": 5,      # 1-10
+    "long_impulso": 5,     # 1-10
+    "ciclo_tx": 5,         # 1-10
+    "tvg_proximo": 5,      # 1-10
+    "tvg_lejano": 5,       # 1-10
+    "cag": 5,              # 1-10
+    "cag_2": 5,            # 1-10 (2° CAG)
+    "limitar_ruido": 5,    # 1-10
+    "curva_color": 1,      # 1-4 (Square Red)
+    "respuesta_color": 1,  # 1-4 (Square Red)
+    "anular_color": 0,     # 0 (Placeholder, may become toggle or specific values later)
+    "promedio_eco": 1,     # 1-3 (Dropdown)
+    "rechazo_interf": 1,   # 1-3 (Dropdown)
+    "angulo_haz_hor": "ANCHO", # "ANCHO", "ESTRECHO" (Square Red)
+    "angulo_haz_ver": "ANCHO", # "ANCHO", "ESTRECHO" (Square Red)
+    "color_menu": 1,         # 1-4 (Square Green Light) - Key for "COLOR" option
     # BORRAR MARCAS items are action buttons, not value states here
-    "nivel_alarma": 9,          # 1-10 (Dropdown)
-    "explor_auto": "ON",        # "ON", "OFF" (Square Green Light)
-    "sector_explor": "±10°",    # Dropdown with specific strings
-    "inclin_auto": "ON",        # "ON", "OFF" (Square Green Light)
-    "angulo_inclin": "±2-10°",  # Dropdown with specific strings
-    "transmision": "ON",        # "ON", "OFF" (Square Green Light)
-    "volumen_audio": 10,        # 1-10 (Dropdown)
+    "nivel_alarma": 9,     # 1-10 (Dropdown)
+    "explor_auto": "ON",   # "ON", "OFF" (Square Green Light)
+    "sector_explor": "±10°", # Dropdown with specific strings
+    "inclin_auto": "ON",   # "ON", "OFF" (Square Green Light)
+    "angulo_inclin": "±2-10°", # Dropdown with specific strings
+    "transmision": "ON",   # "ON", "OFF" (Square Green Light)
+    "volumen_audio": 10,     # 1-10 (Dropdown)
     # ASIGNAR AJUSTE and ASIGNAR MENU are placeholders/actions, not direct value states here
-    # "nivel_alarma": 9,          # REMOVED
-    # "explor_auto": "ON",        # REMOVED
-    # "sector_explor": "±10°",    # REMOVED
-    # "inclin_auto": "ON",        # REMOVED
+    # "nivel_alarma": 9,      # REMOVED
+    # "explor_auto": "ON",    # REMOVED
+    # "sector_explor": "±10°",  # REMOVED
+    # "inclin_auto": "ON",    # REMOVED
     # "angulo_inclin": "±2-10°",  # REMOVED
 }
 
@@ -614,9 +718,9 @@ menu_dropdown_states = {
     "anular_color": False,      # Will be a dropdown 1-10 as per original full list
     "promedio_eco": False,
     "rechazo_interf": False,
-    # "nivel_alarma": False,    # REMOVED
-    # "sector_explor": False,   # REMOVED
-    # "angulo_inclin": False,   # REMOVED
+    # "nivel_alarma": False,     # REMOVED
+    # "sector_explor": False,    # REMOVED
+    # "angulo_inclin": False,    # REMOVED
     "volumen_audio": False
 }
 # --- End Main Menu Pop-up State and Option Variables ---
@@ -709,7 +813,7 @@ TARGET_TYPE_RHOMBUS = "rhombus"
 TARGET_TYPE_X = "x"
 # All markers will be initially white. Hovering will make them red.
 # COLOR_TARGET_BASE = BLANCO # Base color for all markers - Will use current_colors["TARGET_BASE"]
-# COLOR_TARGET_HOVER = ROJO   # Color when hovered or selected - Will use current_colors["TARGET_HOVER"]
+# COLOR_TARGET_HOVER = ROJO    # Color when hovered or selected - Will use current_colors["TARGET_HOVER"]
 
 # --- UI State Dictionary ---
 ui_state = {
@@ -1042,7 +1146,7 @@ def get_screen_line_circle_intersection(p1_screen, p2_screen, circle_center_x, c
     # If p1 is inside the circle (C_k_coeff < 0), one k will be positive (exit) and one negative.
     # If p1 is on the circle (C_k_coeff ~ 0), one k is ~0, other is positive/negative.
     # If p1 is outside (C_k_coeff > 0, though this function assumes p1 is inside/on),
-    #   both k could be positive (entry and exit) or complex (miss).
+    #    both k could be positive (entry and exit) or complex (miss).
     
     intersect_k = -1.0 # Initialize with an invalid value
 
@@ -1074,9 +1178,9 @@ def get_screen_line_circle_intersection(p1_screen, p2_screen, circle_center_x, c
 
 # --- Menu Drawing Helper Function ---
 def draw_single_dropdown_option(surface, option_key_name, label_text, current_opt_value,
-                                is_dropdown_open, y_pos, parent_panel_rect, font_obj,
-                                color_map, item_row_height, dd_item_h,
-                                item_list_or_range): # Changed from num_dd_items
+                                 is_dropdown_open, y_pos, parent_panel_rect, font_obj,
+                                 color_map, item_row_height, dd_item_h,
+                                 item_list_or_range): # Changed from num_dd_items
     """
     Draws a single dropdown option within the main menu.
     item_list_or_range: Can be a list of strings or a range object (e.g., range(1, 11)).
@@ -1159,7 +1263,7 @@ def draw_single_dropdown_option(surface, option_key_name, label_text, current_op
 
 # --- Menu Click Handling Helper Function ---
 def handle_menu_dropdown_click(event_pos, option_key, base_value_box_rect, 
-                               item_rect_list, item_value_list): # Removed num_items, added item_value_list
+                                 item_rect_list, item_value_list): # Removed num_items, added item_value_list
     """
     Handles clicks for a single dropdown option.
     Updates menu_options_values and menu_dropdown_states.
@@ -1207,10 +1311,10 @@ def handle_menu_dropdown_click(event_pos, option_key, base_value_box_rect,
 
 # --- Square Selector Drawing Helper ---
 def draw_square_selector_option(surface, option_key_name, label_text, current_opt_value,
-                                square_item_labels, # List of labels for each square (e.g., ["1", "2"] or ["ANCHO", "ESTRECHO"])
-                                y_pos, parent_panel_rect, font_obj,
-                                color_map, item_row_height, square_size, 
-                                highlight_color_rgb, text_color_rgb=None): # text_color_rgb is optional for text on squares
+                                 square_item_labels, # List of labels for each square (e.g., ["1", "2"] or ["ANCHO", "ESTRECHO"])
+                                 y_pos, parent_panel_rect, font_obj,
+                                 color_map, item_row_height, square_size, 
+                                 highlight_color_rgb, text_color_rgb=None): # text_color_rgb is optional for text on squares
     """
     Draws a square/box selection type menu option.
     Returns a list of clickable Rects for the squares and the total height occupied.
@@ -1258,7 +1362,7 @@ def draw_square_selector_option(surface, option_key_name, label_text, current_op
             # Example: if highlight is dark, use white text. If light, use black.
             # This needs more sophisticated color contrast logic or fixed contrasting colors.
             # For ROJO and VERDE_CLARO, BLANCO text should generally be fine.
-            text_draw_color = color_map["BLANCO"] 
+            text_draw_color = color_map["BLANCO"]  
         else:
             pygame.draw.rect(surface, color_map["NEGRO"], square_rect) # Standard background
             pygame.draw.rect(surface, color_map["BLANCO"], square_rect, 1) # Standard border
@@ -1339,126 +1443,198 @@ def handle_action_button_click(event_pos, button_rect_to_check, action_key_name)
 # --- End Action Button Click Handling Helper ---
 
 
+def get_screen_line_circle_intersection(p1_screen, p2_screen, circle_center_x, circle_center_y, circle_radius_pixels):
+    # p1 is assumed to be inside or on the circle, p2 is used for direction and assumed to be outside.
+    # Calculates intersection of the ray p1->p2 with the circle.
+    # Uses normalized direction vector for better numerical stability.
+
+    x1, y1 = p1_screen
+    x2, y2 = p2_screen # p2 is used for direction; can be far outside
+    cx, cy = circle_center_x, circle_center_y
+    r = circle_radius_pixels
+
+    # Translate points so circle is at origin for easier math
+    x1_trans, y1_trans = x1 - cx, y1 - cy
+    
+    # Direction vector from p1 to p2
+    dx = x2 - x1
+    dy = y2 - y1
+
+    len_d = math.sqrt(dx*dx + dy*dy)
+    if len_d < 1e-9: # p1 and p2 are essentially the same point
+        # If p1 is on the circle, it's the "intersection"
+        if abs((x1_trans**2 + y1_trans**2) - r**2) < 1e-6:
+            return p1_screen
+        return None # Otherwise, no line segment to intersect from p1
+
+    udx, udy = dx/len_d, dy/len_d # Unit direction vector from p1 towards p2
+
+    # Line is P_trans = P1_trans + k * U_dir, where k is distance along unit vector
+    # Substitute into circle equation: (x1_trans + k*udx)^2 + (y1_trans + k*udy)^2 = r^2
+    # Expands to: k^2*(udx^2+udy^2) + k*(2*x1_trans*udx + 2*y1_trans*udy) + (x1_trans^2+y1_trans^2-r^2) = 0
+    # Since (udx^2+udy^2) = 1 (it's a unit vector):
+    # k^2 + k*(2 * (x1_trans*udx + y1_trans*udy)) + (x1_trans^2+y1_trans^2-r^2) = 0
+    
+    # Quadratic equation Ak^2 + Bk_coeff*k + Ck_coeff = 0 for k
+    A_k = 1.0
+    B_k_coeff = 2 * (x1_trans * udx + y1_trans * udy)
+    C_k_coeff = (x1_trans**2 + y1_trans**2) - r**2
+
+    discriminant_k = B_k_coeff**2 - 4*A_k*C_k_coeff
+
+    if discriminant_k < -1e-9: # Allow for small negative due to precision
+        return None # No real intersection (line misses the circle)
+    
+    # Clamp if slightly negative due to floating point math
+    if discriminant_k < 0: discriminant_k = 0 
+
+    sqrt_discriminant_k = math.sqrt(discriminant_k)
+    
+    # Two solutions for k (distance from p1_trans along unit vector)
+    k1 = (-B_k_coeff + sqrt_discriminant_k) / (2*A_k)
+    k2 = (-B_k_coeff - sqrt_discriminant_k) / (2*A_k)
+
+    # We want the smallest non-negative k.
+    # This represents the first intersection point *forward* from p1 along the ray towards p2.
+    # If p1 is inside the circle (C_k_coeff < 0), one k will be positive (exit) and one negative.
+    # If p1 is on the circle (C_k_coeff ~ 0), one k is ~0, other is positive/negative.
+    # If p1 is outside (C_k_coeff > 0, though this function assumes p1 is inside/on),
+    #    both k could be positive (entry and exit) or complex (miss).
+    
+    intersect_k = -1.0 # Initialize with an invalid value
+
+    if k1 >= -1e-9: # k1 is a potential forward intersection (allowing for precision around 0)
+        intersect_k = k1
+    
+    if k2 >= -1e-9: # k2 is also a potential forward intersection
+        if intersect_k == -1.0 or k2 < intersect_k: # If k1 was not valid or k2 is smaller
+            intersect_k = k2
+            
+    if intersect_k == -1.0: # No valid non-negative k found
+        return None
+
+    # The intersection point must be on the segment defined by p1 and extending towards p2,
+    # up to the conceptual location of p2.
+    # intersect_k is the distance from p1. If intersect_k > len_d, it means p2 was *inside*
+    # the circle, and the intersection is beyond p2 (on the ray).
+    # This function is for when p1 is inside and we are looking for the exit towards an outside p2.
+    # So, intersect_k should generally be <= len_d if p2 defines the actual segment end.
+    # However, p2_screen is often a "far point" for direction, so len_d can be huge.
+    # The crucial part is that intersect_k is the distance from p1 to the circle edge.
+
+    # Calculate the intersection point in original screen coordinates
+    final_intersect_x = x1 + intersect_k * udx
+    final_intersect_y = y1 + intersect_k * udy
+    
+    return (int(round(final_intersect_x)), int(round(final_intersect_y)))
+
 def draw_ship_track(surface, track_points_geo, ship_lat, ship_lon, ship_hdg_deg,
                     cc_x, cc_y, disp_radius_px, s_max_on_disp, current_disp_unit, track_color):
+    # This is the new, optimized version of the function.
     if ship_lat is None or ship_lon is None:
         return
 
+    # Safety check to prevent crash from invalid geo data
+    if not -90 <= ship_lat <= 90 or not -180 <= ship_lon <= 180:
+        print(f"DEBUG: Invalid coordinate in draw_ship_track. Lat: {ship_lat}, Lon: {ship_lon}. Skipping draw.")
+        return
+
+    # --- Step 1: Pre-calculation and Geo-to-Screen Conversion ---
     s_max_meters_on_display = s_max_on_disp
     if current_disp_unit == "BRAZAS":
         s_max_meters_on_display *= 1.8288
 
     current_ship_geo = Point(latitude=ship_lat, longitude=ship_lon)
     
-    # The track to draw will be composed of multiple segments (lines)
-    # Each segment is a list of screen points
-    segments_to_draw = []
-    current_segment_screen_points = []
+    # Helper function to convert a single geo point to screen coords
+    # This is where the expensive geodesic calls are contained.
+    def geo_to_screen_coords(geo_pt, ref_ship_geo, ref_ship_hdg_deg, 
+                             center_x, center_y, display_radius_pixels, 
+                             max_dist_meters_for_display_edge):
+        # This function calculates distance and bearing from ship to the point
+        # and returns screen (x,y) or None if it's way off.
+        dist_m = geodesic(ref_ship_geo, geo_pt).meters
+        
+        # A simple optimization: if a point is more than twice the sonar range,
+        # it's definitely not going to be part of a visible segment.
+        # This reduces the number of bearing calculations.
+        if dist_m > max_dist_meters_for_display_edge * 2:
+            return None, dist_m # Return distance for visibility checks
 
-    # Combine current ship position with historic track points for segment processing
-    # The track runs from oldest historic point to current ship position
+        # Calculate true bearing from ship to geo_pt
+        delta_lon_rad = math.radians(geo_pt.longitude - ref_ship_geo.longitude)
+        lat1_rad = math.radians(ref_ship_geo.latitude)
+        lat2_rad = math.radians(geo_pt.latitude)
+        y_brg = math.sin(delta_lon_rad) * math.cos(lat2_rad)
+        x_brg = math.cos(lat1_rad) * math.sin(lat2_rad) - \
+                math.sin(lat1_rad) * math.cos(lat2_rad) * math.cos(delta_lon_rad)
+        true_bearing_rad = math.atan2(y_brg, x_brg)
+        true_bearing_deg = (math.degrees(true_bearing_rad) + 360) % 360
+        
+        relative_bearing_deg = (true_bearing_deg - ref_ship_hdg_deg + 360) % 360
+        
+        pixel_dist = (dist_m / max_dist_meters_for_display_edge) * display_radius_pixels \
+                     if max_dist_meters_for_display_edge > 0 else 0
+        
+        angle_rad_draw = math.radians(relative_bearing_deg)
+        
+        scr_x = center_x + pixel_dist * math.sin(angle_rad_draw)
+        scr_y = center_y - pixel_dist * math.cos(angle_rad_draw) # Pygame Y is inverted
+        return (int(round(scr_x)), int(round(scr_y))), dist_m
+
+    # Process all points at once
     full_track_geo_points = track_points_geo + [{'lat': ship_lat, 'lon': ship_lon}]
-
-    if len(full_track_geo_points) < 2:
-        return # Need at least two points to form a line
-
-    for i in range(len(full_track_geo_points) - 1):
-        p1_geo_data = full_track_geo_points[i]
-        p2_geo_data = full_track_geo_points[i+1]
+    
+    processed_points = []
+    for geo_data in full_track_geo_points:
+        geo_point = Point(latitude=geo_data['lat'], longitude=geo_data['lon'])
+        screen_pos, dist_m = geo_to_screen_coords(geo_point, current_ship_geo, ship_hdg_deg,
+                                                  cc_x, cc_y, disp_radius_px, s_max_meters_on_display)
         
-        p1_geo = Point(latitude=p1_geo_data['lat'], longitude=p1_geo_data['lon'])
-        p2_geo = Point(latitude=p2_geo_data['lat'], longitude=p2_geo_data['lon'])
+        is_visible = dist_m <= s_max_meters_on_display
+        processed_points.append({'screen_pos': screen_pos, 'is_visible': is_visible})
 
-        dist_p1_from_ship_m = geodesic(current_ship_geo, p1_geo).meters
-        dist_p2_from_ship_m = geodesic(current_ship_geo, p2_geo).meters
+    # --- Step 2: Draw segments using only screen coordinates and 2D math ---
+    if len(processed_points) < 2:
+        return
 
-        p1_is_visible = dist_p1_from_ship_m <= s_max_meters_on_display
-        p2_is_visible = dist_p2_from_ship_m <= s_max_meters_on_display
+    for i in range(len(processed_points) - 1):
+        p1_info = processed_points[i]
+        p2_info = processed_points[i+1]
 
-        # Function to convert a geo point to screen coordinates
-        def geo_to_screen(geo_pt, ref_ship_geo, ref_ship_hdg_deg, 
-                          center_x, center_y, display_radius_pixels, 
-                          max_dist_meters_for_display_edge):
-            dist_m = geodesic(ref_ship_geo, geo_pt).meters
-            if dist_m > max_dist_meters_for_display_edge + 1: # Add a small buffer
-                 return None # Clearly outside
-
-            # Calculate true bearing from ship to geo_pt
-            delta_lon_rad = math.radians(geo_pt.longitude - ref_ship_geo.longitude)
-            lat1_rad = math.radians(ref_ship_geo.latitude)
-            lat2_rad = math.radians(geo_pt.latitude)
-            y_brg = math.sin(delta_lon_rad) * math.cos(lat2_rad)
-            x_brg = math.cos(lat1_rad) * math.sin(lat2_rad) - \
-                    math.sin(lat1_rad) * math.cos(lat2_rad) * math.cos(delta_lon_rad)
-            true_bearing_rad = math.atan2(y_brg, x_brg)
-            true_bearing_deg = (math.degrees(true_bearing_rad) + 360) % 360
-            
-            relative_bearing_deg = (true_bearing_deg - ref_ship_hdg_deg + 360) % 360
-            
-            pixel_dist = (dist_m / max_dist_meters_for_display_edge) * display_radius_pixels \
-                         if max_dist_meters_for_display_edge > 0 else 0
-            
-            angle_rad_draw = math.radians(relative_bearing_deg)
-            
-            scr_x = center_x + pixel_dist * math.sin(angle_rad_draw)
-            scr_y = center_y - pixel_dist * math.cos(angle_rad_draw) # Pygame Y is inverted
-            return (int(round(scr_x)), int(round(scr_y)))
-
-        p1_screen = geo_to_screen(p1_geo, current_ship_geo, ship_hdg_deg, cc_x, cc_y, disp_radius_px, s_max_meters_on_display)
-        p2_screen = geo_to_screen(p2_geo, current_ship_geo, ship_hdg_deg, cc_x, cc_y, disp_radius_px, s_max_meters_on_display)
-
-        if p1_is_visible and p2_is_visible:
-            # Both points are visible, add p1_screen to current segment if not already there
-            if not current_segment_screen_points or current_segment_screen_points[-1] != p1_screen:
-                if p1_screen: current_segment_screen_points.append(p1_screen)
-            if p2_screen: current_segment_screen_points.append(p2_screen)
+        p1_screen = p1_info['screen_pos']
+        p2_screen = p2_info['screen_pos']
         
-        elif p1_is_visible and not p2_is_visible:
-            # p1 visible, p2 not. Find intersection.
-            intersection_geo = get_geo_line_circle_intersection(p1_geo, p2_geo, current_ship_geo, s_max_meters_on_display)
-            if intersection_geo:
-                intersection_screen = geo_to_screen(intersection_geo, current_ship_geo, ship_hdg_deg, cc_x, cc_y, disp_radius_px, s_max_meters_on_display)
-                if not current_segment_screen_points or current_segment_screen_points[-1] != p1_screen:
-                     if p1_screen: current_segment_screen_points.append(p1_screen)
-                if intersection_screen: current_segment_screen_points.append(intersection_screen)
-            
-            if current_segment_screen_points:
-                segments_to_draw.append(list(current_segment_screen_points)) # End current segment
-                current_segment_screen_points.clear()
-
-        elif not p1_is_visible and p2_is_visible:
-            # p1 not visible, p2 visible. Find intersection.
-            intersection_geo = get_geo_line_circle_intersection(p2_geo, p1_geo, current_ship_geo, s_max_meters_on_display) # Note order swap for get_geo_line_circle_intersection
-            if intersection_geo:
-                intersection_screen = geo_to_screen(intersection_geo, current_ship_geo, ship_hdg_deg, cc_x, cc_y, disp_radius_px, s_max_meters_on_display)
-                # Start new segment with intersection point
-                if intersection_screen: current_segment_screen_points.append(intersection_screen)
-            if p2_screen: current_segment_screen_points.append(p2_screen)
-            # This segment will continue or be added in the next iteration if p2 was the last point.
-
-        elif not p1_is_visible and not p2_is_visible:
-            # Both points outside. If there was an ongoing segment, end it.
-            if current_segment_screen_points:
-                segments_to_draw.append(list(current_segment_screen_points))
-                current_segment_screen_points.clear()
-            # No part of this segment is drawn.
-
-    # Add any remaining segment
-    if current_segment_screen_points:
-        segments_to_draw.append(list(current_segment_screen_points))
-
-    # Draw all collected segments
-    for segment in segments_to_draw:
-        # Remove duplicate consecutive points that might arise from intersections
-        unique_points_in_segment = []
-        if segment:
-            unique_points_in_segment.append(segment[0])
-            for k in range(1, len(segment)):
-                if segment[k] != segment[k-1]:
-                    unique_points_in_segment.append(segment[k])
+        # Case 1: Both points are visible on screen. Draw the line.
+        if p1_info['is_visible'] and p2_info['is_visible']:
+            if p1_screen and p2_screen: # Should always be true if visible
+                pygame.draw.line(surface, track_color, p1_screen, p2_screen, 1)
         
-        if len(unique_points_in_segment) >= 2:
-            pygame.draw.lines(surface, track_color, False, unique_points_in_segment, 1)
+        # Case 2: One point visible, one not. Clip the line.
+        # This requires both screen positions, even for the non-visible one, to get direction.
+        elif p1_screen and p2_screen:
+            # Determine which point is inside and which is outside
+            inside_point = None
+            outside_point = None
+            if p1_info['is_visible'] and not p2_info['is_visible']:
+                inside_point = p1_screen
+                outside_point = p2_screen
+            elif not p1_info['is_visible'] and p2_info['is_visible']:
+                inside_point = p2_screen
+                outside_point = p1_screen
+            
+            if inside_point and outside_point:
+                # Use the 2D screen-based line clipping function
+                intersection = get_screen_line_circle_intersection(
+                    inside_point, outside_point,
+                    cc_x, cc_y, disp_radius_px - 0.5 # a bit of inset
+                )
+                if intersection:
+                    pygame.draw.line(surface, track_color, inside_point, intersection, 1)
+        # Case 3: Both points are not visible.
+        # For performance, we do not calculate if a segment with both ends off-screen
+        # happens to pass through the circle. The visual impact of missing these
+        # rare segments is negligible compared to the performance gain.
 
 # --- End Track Drawing Logic ---
 
@@ -1745,13 +1921,6 @@ def get_line_circle_intersection(p1, p2, circle_center, circle_radius):
         # Both intersection points are "behind" p1 (both t substantially < 0).
         return None 
         
-    # If p1 is inside the circle (c_quad < 0), one t must be positive and one negative.
-    # The logic above (smallest t >= -epsilon) will correctly pick the positive t.
-    # If p1 is on the circle (c_quad ~ 0), one t is ~0. If the line points outwards,
-    # the other t is positive. Smallest t >= -epsilon still works.
-    # If p1 is outside the circle (c_quad > 0), both t could be positive if line crosses.
-    # This function assumes p1 is inside or on the circle for clipping an outgoing line.
-
     # If the calculated intersection_t would result in a point that is essentially p1,
     # and p2 is distinct from p1, it might mean p1 is on the edge and the line is tangent
     # or points inward. In such cases, for clipping an outgoing line, there's no "further" intersection.
@@ -2188,7 +2357,7 @@ def dibujar_eco_cardumen(surface, info_interseccion,
     borde_alpha = 255
 
     colores_borde = [
-        (0, 255, 0, borde_alpha),   # Verde
+        (0, 255, 0, borde_alpha),  # Verde
         (255, 255, 0, borde_alpha), # Amarillo
         (255, 0, 0, borde_alpha)    # Rojo
     ]
@@ -2364,10 +2533,32 @@ angulo = 0
 # Store rects of drawn interactive elements for click handling (main menu)
 # This needs to be global or passed around if click handling is outside the main loop's direct scope
 # For now, keeping it within the main loop's scope and ensuring it's cleared/updated.
-# If menu state is managed outside, this might need to be part of that state.
 # Declared global earlier, but ensuring it's clear it's used here.
 # interactive_menu_item_rects = {} # This is now initialized inside the menu drawing block
 global_menu_panel_rect = None # Initialize here, before the main loop
+
+# --- Performance Optimization Variables ---
+sweep_surface = None
+last_sweep_surface_size = (0, 0)
+# ---
+
+# --- Load Settings on Startup ---
+load_settings()
+# ---
+
+# --- Auto-connect on Startup ---
+if puerto:
+    print(f"INFO: Se ha encontrado una configuración de puerto guardada. Intentando conectar a {puerto}@{baudios}...")
+    try:
+        ser = serial.Serial(puerto, baudios, timeout=1)
+        serial_port_available = True
+        print(f"INFO: Conectado automáticamente a {puerto}.")
+    except serial.SerialException as e:
+        print(f"ADVERTENCIA: No se pudo conectar automáticamente al puerto guardado {puerto}: {e}")
+        puerto = None # Reset to avoid repeated failed attempts by other logic
+        ser = None
+        serial_port_available = False
+# ---
 
 # --- Inicialización del Cardumen ---
 # Parámetros iniciales del cardumen
@@ -2415,7 +2606,7 @@ sound_triggered_for_cardumen_echo = False # Para evitar múltiples disparos por 
 # --- Fin Variables para el Retardo del Sonido ---
 
 while not hecho:
- 
+    
     # --- Recalcular dimensiones de UI basadas en el tamaño actual de la ventana (`dimensiones`) ---
     # Primero, definir el ancho del panel de datos. Podría ser fijo o un porcentaje.
     # --- Recalcular dimensiones de UI basadas en el tamaño actual de la ventana (`dimensiones`) ---
@@ -2463,8 +2654,6 @@ while not hecho:
     # Actualizar unified_data_box_dims globalmente si es necesario, o pasar como parámetros.
     # Por ahora, lo calcularemos aquí y lo usaremos directamente en las secciones de dibujo.
     # Si alguna función externa lo necesita, habría que considerar cómo pasarlo.
-    # Para este ejemplo, asumimos que las funciones de dibujo pueden acceder a estas variables locales
-    # o que `unified_data_box_dims` se actualiza aquí para ser usado más abajo.
     # La actualización de la variable global `unified_data_box_dims` ya se hizo arriba.
 
     circle_center_x = circle_origin_x + circle_width // 2
@@ -2534,8 +2723,8 @@ while not hecho:
     s_max_for_calc = range_presets_map[current_unit][current_range_index]
     
     calculate_target_data(target_markers, current_tilt_angle, s_max_for_calc, 
-                          display_radius_pixels, current_unit, 
-                          (circle_center_x, circle_center_y), current_ship_heading)
+                           display_radius_pixels, current_unit, 
+                           (circle_center_x, circle_center_y), current_ship_heading)
     # --- End Calculate Target Data ---
 
     # --- Update Marker Screen Positions based on Geo Pos ---
@@ -2730,7 +2919,7 @@ while not hecho:
 
     for evento in pygame.event.get():  # El usuario hizo algo
         if evento.type == pygame.QUIT: # Si el usuario hace click sobre cerrar
-            hecho = True               # Marca que ya lo hemos hecho, de forma que abandonamos el bucole
+            hecho = True                 # Marca que ya lo hemos hecho, de forma que abandonamos el bucole
         elif evento.type == pygame.VIDEORESIZE:
             dimensiones[0] = evento.w
             dimensiones[1] = evento.h
@@ -2786,9 +2975,9 @@ while not hecho:
                             for option_key, rect_info in interactive_menu_item_rects.items():
                                 if option_key in menu_dropdown_states and rect_info and 'value_box' in rect_info and 'items' in rect_info and 'item_values' in rect_info:
                                     if handle_menu_dropdown_click(evento.pos, option_key,
-                                                                  rect_info['value_box'],
-                                                                  rect_info['items'],
-                                                                  rect_info['item_values']):
+                                                                 rect_info['value_box'],
+                                                                 rect_info['items'],
+                                                                 rect_info['item_values']):
                                         clicked_on_menu_element = True
                                         break 
                                 elif option_key in menu_options_values and not (option_key in menu_dropdown_states): 
@@ -2912,9 +3101,11 @@ while not hecho:
     # Read from serial port if available
     if serial_port_available and ser: # Check ser object directly
         try:
-            if ser.in_waiting > 0: # Check in_waiting only if port seems available
+            if ser.in_waiting > 0:
                 line = ser.readline().decode('ascii', errors='replace').strip()
-                if line: # Process only if line is not empty
+                
+                # Process only if a line was actually received
+                if line and is_valid_nmea_checksum(line):
                     if line.startswith('$GPGLL') or line.startswith('$GNGLL'):
                         parse_gll(line)
                     elif line.startswith('$GPGGA') or line.startswith('$GNGGA'):
@@ -2931,6 +3122,9 @@ while not hecho:
                         parse_zda(line)
                     elif line.startswith('$PFEC,GPatt'): # Specific check for the proprietary sentence
                         parse_fec_gpatt(line)
+                elif line:
+                    # Optional: Print discarded sentences for debugging
+                    print(f"Discarding corrupt NMEA sentence: {line}")
         except serial.SerialException as se:
             print(f"COM port error/disconnected: {se}")
             if ser and ser.is_open:
@@ -3061,14 +3255,21 @@ while not hecho:
 
     # --- Draw Sonar Sweep ---
     if current_sweep_radius_pixels > 0 and current_sweep_radius_pixels <= display_radius_pixels:
-        # Draw a semi-transparent blue circle for the sweep
-        # To make it semi-transparent, we create a temporary surface
-        sweep_surface = pygame.Surface((display_radius_pixels * 2, display_radius_pixels * 2), pygame.SRCALPHA)
-        sweep_color_with_alpha = (*current_colors["SWEEP"], 150)
-        pygame.draw.circle(sweep_surface, sweep_color_with_alpha,  # Changed AZUL to CELESTE, alpha 150
-                           (display_radius_pixels, display_radius_pixels), # Center of the temp surface
-                           int(current_sweep_radius_pixels), 2) # Thickness 2
-        pantalla.blit(sweep_surface, (center_x - display_radius_pixels, center_y - display_radius_pixels))
+        # Optimization: Re-create surface only on size change
+        current_sweep_surface_size = (display_radius_pixels * 2, display_radius_pixels * 2)
+        if sweep_surface is None or current_sweep_surface_size != last_sweep_surface_size:
+            if current_sweep_surface_size[0] > 0 and current_sweep_surface_size[1] > 0:
+                sweep_surface = pygame.Surface(current_sweep_surface_size, pygame.SRCALPHA)
+                last_sweep_surface_size = current_sweep_surface_size
+        
+        if sweep_surface:
+            # Draw a semi-transparent blue circle for the sweep
+            sweep_surface.fill((0, 0, 0, 0)) # Clear the surface for transparency
+            sweep_color_with_alpha = (*current_colors["SWEEP"], 150)
+            pygame.draw.circle(sweep_surface, sweep_color_with_alpha,
+                               (display_radius_pixels, display_radius_pixels), # Center of the temp surface
+                               int(current_sweep_radius_pixels), 2) # Thickness 2
+            pantalla.blit(sweep_surface, (center_x - display_radius_pixels, center_y - display_radius_pixels))
     # --- End Draw Sonar Sweep ---
 
     # Draw the center icon
@@ -3097,34 +3298,12 @@ while not hecho:
     if active_sonar_rose_unit_surface:
         sonar_rose_unit_rect = active_sonar_rose_unit_surface.get_rect()
         
-        # Position near the bottom-right of the sonar circle (dimensiones_caja defines sonar circle)
-        # Default X: right edge of sonar circle, minus some padding
-        base_x_unit_text = dimensiones_caja[0] + dimensiones_caja[2] - 10 # 10px from right edge of sonar
-        
-        # Default Y: bottom edge of sonar circle, minus some padding
-        base_y_unit_text = dimensiones_caja[1] + dimensiones_caja[3] - 5 # 5px from bottom edge of sonar
-        
-        sonar_rose_unit_rect.bottomright = (base_x_unit_text, base_y_unit_text)
+        # New positioning logic:
+        # Align with the R/T/G text horizontally (right-aligned, 10px left of the data panel)
+        sonar_rose_unit_rect.right = unified_data_box_dims[0] - 10
 
-        # If target data is visible and its rect (td_dist_t1_t2_rect) is defined,
-        # position unit text above the target data block.
-        # td_dist_t1_t2_rect is the rect of the first line of the target data block.
-        if len(target_markers) >= 2 and 'td_dist_t1_t2_rect' in locals() and td_dist_t1_t2_rect is not None:
-            # Place it above the td_dist_t1_t2_rect (which is the first line of target data)
-            # Align its right with the right of td_dist_t1_t2_rect or slightly offset if needed.
-            # For simplicity, let's align with the right edge of sonar circle still, but adjust Y.
-            sonar_rose_unit_rect.right = base_x_unit_text # Keep X alignment consistent
-            sonar_rose_unit_rect.bottom = td_dist_t1_t2_rect.top - 3 # 3px margin above target data
-            
-        # Final check to ensure it's within sonar circle bounds (approx)
-        if sonar_rose_unit_rect.right > dimensiones_caja[0] + dimensiones_caja[2] - 5:
-             sonar_rose_unit_rect.right = dimensiones_caja[0] + dimensiones_caja[2] - 5
-        if sonar_rose_unit_rect.bottom > dimensiones_caja[1] + dimensiones_caja[3] - 5:
-             sonar_rose_unit_rect.bottom = dimensiones_caja[1] + dimensiones_caja[3] - 5
-        if sonar_rose_unit_rect.left < dimensiones_caja[0] + 5:
-             sonar_rose_unit_rect.left = dimensiones_caja[0] + 5
-        if sonar_rose_unit_rect.top < dimensiones_caja[1] + 5:
-             sonar_rose_unit_rect.top = dimensiones_caja[1] + 5
+        # Align with the bottom of the sonar circle vertically
+        sonar_rose_unit_rect.bottom = dimensiones_caja[1] + dimensiones_caja[3] - 5 # 5px padding from bottom
 
         pantalla.blit(active_sonar_rose_unit_surface, sonar_rose_unit_rect)
     # --- End Sonar Rose Unit Text ---
@@ -3141,7 +3320,7 @@ while not hecho:
     pygame.draw.rect(pantalla, current_colors["DATA_PANEL_BG"], unified_data_box_dims)
     pygame.draw.rect(pantalla, current_colors["DATA_PANEL_BORDER"], unified_data_box_dims, 2)
 
-  # Slot 1: VELOCIDAD
+ # Slot 1: VELOCIDAD
     text_surface_longitud = font.render(texto_longitud, True, current_colors["PRIMARY_TEXT"]) # texto_longitud is "VELOC DEL BARCO"
     text_rect_longitud = text_surface_longitud.get_rect()
     text_rect_longitud.left = unified_data_box_dims[0] + 5 
@@ -3408,7 +3587,7 @@ while not hecho:
     unit_suffix_for_display = sonar_rose_unit_text_map[current_unit] 
     
     # line1_text = f"H: {ui_state['cursor_H_proj_display']}{unit_suffix_for_display}" # No longer used directly
-    # line2_text = f"S: {ui_state['cursor_S_range_display']}{unit_suffix_for_display} \u2198" # No longer used directly
+    # line2_text = f"S: {ui_state['cursor_S_range_display']}{unit_suffix_for_display} ⭢" # No longer used directly
     # line3_text = f"D: {ui_state['cursor_Depth_display']}{unit_suffix_for_display}" # Original full string for value - No longer used directly
     # line4_text_val = f"{ui_state['cursor_bearing_display']}°" # Original full string for value - No longer used directly
 
@@ -3447,13 +3626,12 @@ while not hecho:
 
     # --- Display Calculated Target Data (Bottom-Right inside Sonar Rose) ---
     large_symbol_font = font_large 
-    label_font = font          
+    label_font = font 
     
     if len(target_markers) >= 2:
         effective_line_height = large_symbol_font.get_linesize() 
         
         margin_bottom_sonar_circle = 10 
-        margin_right_sonar_circle = 10
         symbol_value_spacing = 2
 
         target_data_lines_info = [
@@ -3466,69 +3644,44 @@ while not hecho:
 
         # Calculate total height to position the block from the bottom of the sonar circle
         num_lines_target_data = len(target_data_lines_info)
-        # Approximate height: use label_font height as it's likely the smallest defining factor per line after symbols
-        # This is a simplification; a more robust way sums actual rendered heights.
-        # For now, using effective_line_height which is based on the larger font (large_symbol_font)
-        # to ensure enough space if symbols are tall.
         total_text_block_height = (num_lines_target_data * effective_line_height) + \
-                                  ((num_lines_target_data - 1) * 3 if num_lines_target_data > 0 else 0)
+                                    ((num_lines_target_data - 1) * 3 if num_lines_target_data > 0 else 0)
 
-
-        # Start Y for the block, from the bottom of the sonar circle
         start_y_for_target_block = (circle_origin_y + circle_height) - total_text_block_height - margin_bottom_sonar_circle
         
-        current_y_offset_target_data = start_y_for_target_block # Initialize y_offset for the first line
+        current_y_offset_target_data = start_y_for_target_block
 
+        # Calculate the maximum width of the rendered lines to ensure right-alignment
         max_line_width = 0
         rendered_lines = []
         for label_str, value_str, is_special in target_data_lines_info:
             font_for_label = large_symbol_font if is_special else label_font
             label_surf = font_for_label.render(label_str, True, current_colors["PRIMARY_TEXT"])
-            value_surf = label_font.render(value_str, True, current_colors["PRIMARY_TEXT"]) # Values always small
+            value_surf = label_font.render(value_str, True, current_colors["PRIMARY_TEXT"])
             line_width = label_surf.get_width() + symbol_value_spacing + value_surf.get_width()
             if line_width > max_line_width:
                 max_line_width = line_width
             rendered_lines.append({'label_surf': label_surf, 'value_surf': value_surf, 'is_special': is_special})
+        
+        # --- AHORA LA PARTE MODIFICADA: POSICIONAR EL BLOQUE RESPECTO AL PANEL DE DATOS ---
+        margin_right_to_data_panel = 10
+        right_x_for_target_block = unified_data_box_dims[0] - margin_right_to_data_panel
 
-        # Start X for the block, from the right edge of the sonar circle
-        start_x_for_target_block = (circle_origin_x + circle_width) - max_line_width - margin_right_sonar_circle
-
-
-        for i, line_info in enumerate(rendered_lines): 
+        for i, line_info in enumerate(rendered_lines):
             label_surf = line_info['label_surf']
             value_surf = line_info['value_surf']
             
-            # Position label part of the line
             current_line_total_width = label_surf.get_width() + symbol_value_spacing + value_surf.get_width()
-            current_start_x_for_line = start_x_for_target_block + (max_line_width - current_line_total_width) # Right align this line within the block
-
-            y_pos_for_this_line = current_y_offset_target_data
+            current_start_x_for_line = right_x_for_target_block - current_line_total_width
             
-            # Store rect for the first line (td_dist_t1_t2_rect) if needed elsewhere (e.g. for Sonar Rose Unit Text positioning)
-            # This part of the logic for td_dist_t1_t2_rect might need re-evaluation if its original purpose was
-            # for positioning elements outside the sonar circle relative to this block.
-            # Since this block is now *inside* the sonar circle, its absolute screen rect might not be as useful
-            # for those external elements.
-            # For now, we'll keep the calculation in case it's used for relative internal positioning or debugging.
-            if i == 0: 
-                 td_dist_t1_t2_rect = pygame.Rect(
-                     current_start_x_for_line, 
-                     y_pos_for_this_line, 
-                     current_line_total_width, 
-                     label_surf.get_height() # Or effective_line_height if all lines should have same conceptual height for this rect
-                 )
-
+            y_pos_for_this_line = current_y_offset_target_data + (i * (effective_line_height + 3))
 
             label_rect = label_surf.get_rect(topleft=(current_start_x_for_line, y_pos_for_this_line))
-            value_rect = value_surf.get_rect(left=label_rect.right + symbol_value_spacing, centery=label_rect.centery) 
+            value_rect = value_surf.get_rect(left=label_rect.right + symbol_value_spacing, centery=label_rect.centery)
             
-            # Ensure it doesn't go out of the sonar circle bounds (approx)
-            if value_rect.right < circle_origin_x + circle_width - margin_right_sonar_circle + 5 and \
-               label_rect.bottom < circle_origin_y + circle_height - margin_bottom_sonar_circle + 5 :
-                 pantalla.blit(label_surf, label_rect)
-                 pantalla.blit(value_surf, value_rect)
-            
-            current_y_offset_target_data += effective_line_height + 3 # Use consistent line height for spacing
+            pantalla.blit(label_surf, label_rect)
+            pantalla.blit(value_surf, value_rect)
+
     # --- End Display Calculated Target Data ---
 
 
@@ -3537,11 +3690,11 @@ while not hecho:
         cursor_x, cursor_y = ui_state["mouse_cursor_pos"]
         cursor_arm_length = 18 
         pygame.draw.line(pantalla, current_colors["CURSOR_CROSS"],
-                         (cursor_x - cursor_arm_length, cursor_y), 
-                         (cursor_x + cursor_arm_length, cursor_y), 2)
+                          (cursor_x - cursor_arm_length, cursor_y), 
+                          (cursor_x + cursor_arm_length, cursor_y), 2)
         pygame.draw.line(pantalla, current_colors["CURSOR_CROSS"],
-                         (cursor_x, cursor_y - cursor_arm_length), 
-                         (cursor_x, cursor_y + cursor_arm_length), 2)
+                          (cursor_x, cursor_y - cursor_arm_length), 
+                          (cursor_x, cursor_y + cursor_arm_length), 2)
     # --- End Draw Custom "+" Cursor ---
 
     # --- Draw Target Markers & Lines Between Them ---
@@ -3632,7 +3785,7 @@ while not hecho:
                 # Use cos for X, sin for Y because angle_rad_for_draw is adjusted for screen (-90 deg)
                 # where 0 rad = East, PI/2 rad = South (if Y points down), -PI/2 rad = North (if Y points up)
                 hypothetical_m2_x = circle_center_x + far_radius * math.cos(angle_rad_for_draw)
-                hypothetical_m2_y = circle_center_y + far_radius * math.sin(angle_rad_for_draw) # Pygame Y is down, so positive sin is down
+                hypothetical_m2_y = circle_center_y + far_radius * math.sin(angle_rad_for_draw)
                 hypothetical_pos2_far = (hypothetical_m2_x, hypothetical_m2_y)
 
             if hypothetical_pos2_far:
@@ -3645,7 +3798,7 @@ while not hecho:
                     )
                     if intersection_point:
                         if math.sqrt((intersection_point[0]-pos1[0])**2 + (intersection_point[1]-pos1[1])**2) > 1:
-                             pygame.draw.line(pantalla, current_colors["PRIMARY_TEXT"], pos1, intersection_point, 1)
+                              pygame.draw.line(pantalla, current_colors["PRIMARY_TEXT"], pos1, intersection_point, 1)
 
         elif not pos1 and pos2: # Marker1 is off screen (pos1 is None), Marker2 is on screen
             hypothetical_pos1_far = None
@@ -3782,7 +3935,7 @@ while not hecho:
         # The UNIDADES button's top is text_rect_att_roll.bottom + 15.
         # This positioning keeps the popup starting at roughly the same vertical area as the buttons.
         if 'text_rect_att_roll' in locals() and text_rect_att_roll is not None: 
-             popup_main_rect.top = text_rect_att_roll.bottom + 15 
+              popup_main_rect.top = text_rect_att_roll.bottom + 15 
         else: # Fallback if text_rect_att_roll somehow not defined
             # This fallback might need adjustment if text_rect_att_roll is critical for Y
             # A better fallback might be relative to where the buttons are drawn.
@@ -3791,7 +3944,7 @@ while not hecho:
 
         # Use GRIS_MEDIO for popup background, BLANCO for border (consistent across themes for now)
         pygame.draw.rect(pantalla, GRIS_MEDIO, popup_main_rect) 
-        pygame.draw.rect(pantalla, BLANCO, popup_main_rect, 2)    
+        pygame.draw.rect(pantalla, BLANCO, popup_main_rect, 2)  
 
         button_height = 30 
         button_width = popup_width - 40 
@@ -3849,8 +4002,6 @@ while not hecho:
         # in the new unified_data_box.
         # section2_start_y was defined earlier as: unified_data_box_dims[1] + 340 + 10
         # Ensure section2_start_y is accessible or recalculate if necessary.
-        # For robustness, let's use the y-coordinate of where the HORA/FECHA title (text_rect_db2_title) is placed,
-        # minus its top padding, if available. Or recalculate section2_start_y.
         # text_rect_db2_title.top = section2_start_y + 5
         # So, section2_start_y = text_rect_db2_title.top - 5 (if text_rect_db2_title is already set)
         # This assumes text_rect_db2_title is defined before this popup drawing logic. It is.
@@ -3877,7 +4028,7 @@ while not hecho:
 
         # Use GRIS_MEDIO for popup background, BLANCO for border (consistent across themes for now)
         pygame.draw.rect(pantalla, GRIS_MEDIO, puerto_popup_main_rect) 
-        pygame.draw.rect(pantalla, BLANCO, puerto_popup_main_rect, 2)    
+        pygame.draw.rect(pantalla, BLANCO, puerto_popup_main_rect, 2)  
 
         title_rect = puerto_popup_title_surf.get_rect(centerx=puerto_popup_main_rect.centerx, top=puerto_popup_main_rect.top + 10)
         pantalla.blit(puerto_popup_title_surf, title_rect) # Text color is BLANCO from re-render
@@ -3896,247 +4047,4 @@ while not hecho:
         pygame.draw.rect(pantalla, BLANCO, puerto_popup_select_port_rect, 1)
         port_display_text = selected_com_port_in_popup if selected_com_port_in_popup else "Seleccionar..."
         port_display_surf = font.render(port_display_text, True, BLANCO) # Text in dropdown BLANCO
-        pantalla.blit(port_display_surf, port_display_surf.get_rect(centery=puerto_popup_select_port_rect.centery, left=puerto_popup_select_port_rect.left + 5))
-
-        current_y_offset_puerto += dropdown_height + 5 
-
-        if show_com_port_dropdown:
-            list_box_x = puerto_popup_select_port_rect.left
-            list_box_y = puerto_popup_select_port_rect.bottom + 2
-            list_box_width = puerto_popup_select_port_rect.width
-            max_dropdown_list_height = 100 
-            
-            puerto_popup_port_list_item_rects.clear()
-            temp_y_list_item = list_box_y
-            actual_list_height = min(len(available_com_ports_list) * dropdown_item_height, max_dropdown_list_height)
-            if not available_com_ports_list: actual_list_height = dropdown_item_height 
-            
-            pygame.draw.rect(pantalla, NEGRO, (list_box_x, list_box_y, list_box_width, actual_list_height)) # Dropdown list NEGRO/BLANCO
-            pygame.draw.rect(pantalla, BLANCO, (list_box_x, list_box_y, list_box_width, actual_list_height),1)
-
-            if not available_com_ports_list:
-                no_ports_surf = font.render("No hay puertos disponibles", True, GRIS_MEDIO) # GRIS_MEDIO for disabled text
-                pantalla.blit(no_ports_surf, no_ports_surf.get_rect(centerx=list_box_x + list_box_width // 2, top=temp_y_list_item + 2))
-            else:
-                for i, port_name in enumerate(available_com_ports_list):
-                    if temp_y_list_item + dropdown_item_height > list_box_y + max_dropdown_list_height:
-                        break 
-                    item_rect = pygame.Rect(list_box_x, temp_y_list_item, list_box_width, dropdown_item_height)
-                    puerto_popup_port_list_item_rects.append(item_rect)
-                    item_color = BLANCO # Default item color BLANCO
-                    if port_name == selected_com_port_in_popup: 
-                        item_color = VERDE # Selected item VERDE
-                    port_item_surf = font.render(port_name, True, item_color)
-                    pantalla.blit(port_item_surf, port_item_surf.get_rect(centery=item_rect.centery, left=item_rect.left + 5))
-                    temp_y_list_item += dropdown_item_height
-            current_y_offset_puerto = list_box_y + actual_list_height + 10 
-        else:
-             current_y_offset_puerto = puerto_popup_select_port_rect.bottom + 10
-
-
-        # Baud Rate Selection
-        pantalla.blit(puerto_popup_baud_label_surf, (puerto_popup_main_rect.left + popup_internal_padding_x, current_y_offset_puerto)) # Text color BLANCO
-        puerto_popup_select_baud_rect.topleft = (puerto_popup_main_rect.left + popup_internal_padding_x + puerto_popup_baud_label_surf.get_width() + 10, current_y_offset_puerto - 2)
-        puerto_popup_select_baud_rect.width = puerto_popup_main_rect.width - (popup_internal_padding_x * 2) - puerto_popup_baud_label_surf.get_width() - 10
-        puerto_popup_select_baud_rect.height = dropdown_height
-        pygame.draw.rect(pantalla, NEGRO, puerto_popup_select_baud_rect) # Dropdown box NEGRO/BLANCO
-        pygame.draw.rect(pantalla, BLANCO, puerto_popup_select_baud_rect, 1)
-        baud_display_surf = font.render(str(selected_baud_rate_in_popup), True, BLANCO) # Text in dropdown BLANCO
-        pantalla.blit(baud_display_surf, baud_display_surf.get_rect(centery=puerto_popup_select_baud_rect.centery, left=puerto_popup_select_baud_rect.left + 5))
-        
-        current_y_offset_puerto += dropdown_height + 5
-
-        if show_baud_rate_dropdown:
-            list_box_x = puerto_popup_select_baud_rect.left
-            list_box_y = puerto_popup_select_baud_rect.bottom + 2
-            list_box_width = puerto_popup_select_baud_rect.width
-            max_dropdown_list_height = 100 
-            
-            puerto_popup_baud_list_item_rects.clear()
-            temp_y_list_item = list_box_y
-            actual_list_height = min(len(available_baud_rates_list) * dropdown_item_height, max_dropdown_list_height)
-            pygame.draw.rect(pantalla, NEGRO, (list_box_x, list_box_y, list_box_width, actual_list_height)) # Dropdown list NEGRO/BLANCO
-            pygame.draw.rect(pantalla, BLANCO, (list_box_x, list_box_y, list_box_width, actual_list_height),1)
-
-            for i, baud_val in enumerate(available_baud_rates_list):
-                if temp_y_list_item + dropdown_item_height > list_box_y + max_dropdown_list_height:
-                    break 
-                item_rect = pygame.Rect(list_box_x, temp_y_list_item, list_box_width, dropdown_item_height)
-                puerto_popup_baud_list_item_rects.append(item_rect)
-                item_color = BLANCO # Default item color BLANCO
-                if baud_val == selected_baud_rate_in_popup: item_color = VERDE # Selected item VERDE
-                
-                baud_item_surf = font.render(str(baud_val), True, item_color)
-                pantalla.blit(baud_item_surf, baud_item_surf.get_rect(centery=item_rect.centery, left=item_rect.left + 5))
-                temp_y_list_item += dropdown_item_height
-            current_y_offset_puerto = list_box_y + actual_list_height + 10
-        else:
-            current_y_offset_puerto = puerto_popup_select_baud_rect.bottom + 10
-
-        # Status Message
-        if puerto_popup_message:
-            msg_surf = font.render(puerto_popup_message, True, BLANCO) # Message text BLANCO
-            msg_rect = msg_surf.get_rect(centerx=puerto_popup_main_rect.centerx, top=current_y_offset_puerto)
-            pantalla.blit(msg_surf, msg_rect)
-            current_y_offset_puerto = msg_rect.bottom + 10
-        
-        # Buttons (Apply, Cancel) 
-        button_width_puerto = 100 # Renamed to avoid conflict
-        button_height_puerto = 30 # Renamed
-        gap_between_buttons_puerto = 10 # Renamed
-        
-        puerto_popup_cancel_button_rect.width = button_width_puerto
-        puerto_popup_cancel_button_rect.height = button_height_puerto
-        puerto_popup_cancel_button_rect.bottom = puerto_popup_main_rect.bottom - popup_internal_padding_x 
-        puerto_popup_cancel_button_rect.right = puerto_popup_main_rect.centerx - (gap_between_buttons_puerto / 2)
-        pygame.draw.rect(pantalla, NEGRO, puerto_popup_cancel_button_rect) # Button BG NEGRO
-        pygame.draw.rect(pantalla, VERDE, puerto_popup_cancel_button_rect, 1) # Button Border VERDE
-        pantalla.blit(puerto_popup_cancel_text_surf, puerto_popup_cancel_text_surf.get_rect(center=puerto_popup_cancel_button_rect.center)) # Text BLANCO from re-render
-
-        puerto_popup_apply_button_rect.width = button_width_puerto
-        puerto_popup_apply_button_rect.height = button_height_puerto
-        puerto_popup_apply_button_rect.bottom = puerto_popup_main_rect.bottom - popup_internal_padding_x 
-        puerto_popup_apply_button_rect.left = puerto_popup_main_rect.centerx + (gap_between_buttons_puerto / 2)
-        pygame.draw.rect(pantalla, NEGRO, puerto_popup_apply_button_rect) # Button BG NEGRO
-        pygame.draw.rect(pantalla, VERDE, puerto_popup_apply_button_rect, 1) # Button Border VERDE
-        pantalla.blit(puerto_popup_apply_text_surf, puerto_popup_apply_text_surf.get_rect(center=puerto_popup_apply_button_rect.center)) # Text BLANCO from re-render
-    # --- End Draw "Puerto" Pop-up Window ---
-
-    # --- Draw Main Menu Pop-up Panel ---
-    if show_main_menu_popup:
-        menu_panel_width = 300  # Fixed width
-        menu_panel_margin_top = 10
-        menu_panel_margin_right = 10
-        menu_panel_internal_padding_top = 10 # Padding inside the panel, above title
-        menu_panel_internal_padding_bottom = 15 # Padding inside the panel, below last item
-        spacing_between_items = 8 # Consistent spacing for height calculation
-        
-        _menu_item_row_h = font_menu_item.get_linesize() + 4 # Adjusted item height for new font
-        _base_dropdown_item_h = font_menu_item.get_linesize() + 2
-
-        # --- Calculate Content Height ---
-        _content_total_h = 0 
-        # No title, start with top padding for the first item
-        # _content_total_h += font_large.get_height() + 15 # title + its bottom padding (15 is from current_menu_y_offset = title_menu_rect.bottom + 15)
-        
-        _all_menu_items_config = [
-            ("dropdown", "potencia_tx", "POTENCIA TX:", range(1, 11), None),
-            ("dropdown", "long_impulso", "LONG IMPULSO:", range(1, 11), None),
-            ("dropdown", "ciclo_tx", "CICLO TX:", range(1, 11), None),
-            ("dropdown", "tvg_proximo", "TVG PROXIMO:", range(1, 11), None),
-            ("dropdown", "tvg_lejano", "TVG LEJANO:", range(1, 11), None),
-            ("dropdown", "cag", "CAG:", range(1, 11), None),
-            ("dropdown", "cag_2", "2° CAG:", range(1, 11), None),
-            ("dropdown", "limitar_ruido", "LIMITAR RUIDO:", range(1, 11), None),
-            ("square", "curva_color", "CURVA COLOR:", [str(i) for i in range(1, 5)], "ROJO"),
-            ("square", "respuesta_color", "RESPUESTA COLOR:", [str(i) for i in range(1, 5)], "ROJO"),
-            ("dropdown", "anular_color", "ANULAR COLOR:", range(1, 11), None),
-            ("dropdown", "promedio_eco", "PROMEDIO ECO:", range(1, 4), None),
-            ("dropdown", "rechazo_interf", "RECHAZO INTERF:", range(1, 4), None),
-            ("square", "angulo_haz_hor", "ANGULO HAZ HOR:", ["ANCHO", "ESTRECHO"], "ROJO"),
-            ("square", "angulo_haz_ver", "ANGULO HAZ VER:", ["ANCHO", "ESTRECHO"], "ROJO"),
-            ("square", "color_menu", "COLOR:", [str(i) for i in range(1, 5)], "VERDE_CLARO"),
-            # BORRAR MARCAS items are action buttons, not value states here
-            # ("dropdown", "nivel_alarma", "NIVEL ALARMA:", range(1,11), None), # REMOVED
-            # ("square", "explor_auto", "EXPLOR AUTO:", ["ON", "OFF"], "VERDE_CLARO"), # REMOVED
-            # ("dropdown", "sector_explor", "SECTOR EXPLOR:", ["±10°", "±20°", "±30°", "±60°", "±90°", "±170°"], None), # REMOVED
-            # ("square", "inclin_auto", "INCLIN AUTO:", ["ON", "OFF"], "VERDE_CLARO"), # REMOVED
-            # ("dropdown", "angulo_inclin", "ANGULO INCLIN:", ["±2-10°", "±2-20°", "±2-30°", "±2-40°", "±2-55°"], None), # REMOVED
-            ("square", "transmision", "TRANSMISION:", ["ON", "OFF"], "VERDE_CLARO"),
-            ("dropdown", "volumen_audio", "VOLUMEN AUDIO:", range(0, 11), None), # Changed range to 0-10
-        ]
-        
-        for item_config_type, _, _, _, _ in _all_menu_items_config:
-            _content_total_h += _menu_item_row_h + spacing_between_items
-        
-        # Subtract one spacing_between_items as the last item doesn't have spacing *after* it before bottom padding
-        if len(_all_menu_items_config) > 0: # if there's any content
-             _content_total_h -= spacing_between_items # remove last spacing if items exist
-
-
-        calculated_panel_height = menu_panel_internal_padding_top + _content_total_h + menu_panel_internal_padding_bottom
-        
-        menu_panel_rect = pygame.Rect(
-            dimensiones[0] - menu_panel_width - menu_panel_margin_right, # Right aligned
-            menu_panel_margin_top,
-            menu_panel_width,
-            min(calculated_panel_height, dimensiones[1] - menu_panel_margin_top - 10) # Max height, 10px margin bottom
-        )
-        # Ensure minimum height if calculated is too small or negative due to screen constraints
-        menu_panel_rect.height = max(menu_panel_rect.height, 50)
-
-        # Use GRIS_MEDIO for menu panel background, BLANCO for border (consistent for now)
-        pygame.draw.rect(pantalla, GRIS_MEDIO, menu_panel_rect) 
-        pygame.draw.rect(pantalla, BLANCO, menu_panel_rect, 2)   
-
-        # Title removed
-        
-      
-        global_menu_panel_rect = menu_panel_rect 
-
-        # --- Menu Content Drawing ---
-        current_menu_y_offset = menu_panel_rect.top + menu_panel_internal_padding_top 
-        menu_item_height = _menu_item_row_h 
-        menu_padding_x = 10
-        
-        interactive_menu_item_rects = {}
-        base_dropdown_item_height = _base_dropdown_item_h 
-        color_palette_map = {"NEGRO": NEGRO, "BLANCO": BLANCO} 
-        square_size_calc = int(font_menu_item.get_height() * 2.0) 
-        color_palette_map_sq = {"NEGRO": NEGRO, "BLANCO": BLANCO, "ROJO": ROJO, "VERDE_CLARO": VERDE_CLARO}
-
-        for item_type, key, label, item_source_or_labels, highlight_color_key in _all_menu_items_config:
-            current_value = menu_options_values[key]
-            occupied_h = 0
-
-            if item_type == "dropdown":
-                is_open = menu_dropdown_states[key]
-                drawn_elements, occupied_h = draw_single_dropdown_option(
-                    pantalla, key, label, current_value, is_open,
-                    current_menu_y_offset, menu_panel_rect, font_menu_item, 
-                    color_palette_map,
-                    menu_item_height, 
-                    base_dropdown_item_height, 
-                    item_source_or_labels 
-                )
-                interactive_menu_item_rects[key] = drawn_elements
-            elif item_type == "square":
-                item_values = item_source_or_labels 
-                drawn_sq_rects, occupied_h = draw_square_selector_option(
-                    pantalla, key, label, current_value, item_source_or_labels,
-                    current_menu_y_offset, menu_panel_rect, font_menu_item,
-                    color_palette_map_sq, menu_item_height, square_size_calc, 
-                    color_palette_map_sq[highlight_color_key]
-                )
-                interactive_menu_item_rects[key] = {'squares': drawn_sq_rects, 'values': item_values}
-            
-            current_menu_y_offset += occupied_h + spacing_between_items
-        
-        # --- ASIGNAR AJUSTE (Placeholder) - REMOVED ---
-        # asignar_label_text = "ASIGNAR AJUSTE:"
-        # asignar_label_surf = font_menu_item.render(asignar_label_text, True, BLANCO) 
-        # asignar_label_rect = asignar_label_surf.get_rect(topleft=(menu_panel_rect.left + menu_padding_x, current_menu_y_offset))
-        # pantalla.blit(asignar_label_surf, asignar_label_rect)
-        # current_menu_y_offset += asignar_label_surf.get_height() + spacing_between_items
-
-        # f_key_options = ["TECLA F1", "TECLA F2", "TECLA F3", "TECLA F4"] # REMOVED
-        # for f_key_text in f_key_options:
-            # f_key_surf = font_menu_item.render(f_key_text, True, GRIS_MEDIO) 
-            # f_key_rect = f_key_surf.get_rect(topleft=(menu_panel_rect.left + menu_padding_x + 20, current_menu_y_offset))
-            # pantalla.blit(f_key_surf, f_key_rect)
-            # current_menu_y_offset += f_key_surf.get_height() + 5 
-
-
-    # --- End Draw Main Menu Pop-up Panel ---
-
-    # Avancemos y actualicemos la pantalla con lo que hemos dibujado.
-    pygame.display.flip()
-
-    # Limitamos a 60 fotogramas por segundo
-    reloj.tick(60)
-
-if serial_port_available and ser is not None:
-    ser.close()
-pygame.quit()
-
-
+        pantalla.blit(port_display_surf, port_display_surf.get_rect(centery=puerto
