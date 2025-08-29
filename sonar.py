@@ -375,67 +375,617 @@ screen = pygame.display.set_mode(dimensiones, pygame.RESIZABLE)
 
 
 
-# --- Settings Persistence ---
+# --- NUEVO: Clase para el Sistema de Menú ---
+class MenuSystem:
+    def __init__(self):
+        self.active = False
+        self.tabs = ['SONAR', 'SONDA', 'MARCAS', 'SISTEMA']
+        self.active_tab = 'SISTEMA'
+
+        # Fuentes
+        self.font_tab = pygame.font.Font(None, 28)
+        self.font_item_label = pygame.font.Font(None, 20)
+        self.font_item_value = pygame.font.Font(None, 20)
+
+        # Colores
+        self.color_bg = (50, 50, 70)
+        self.color_border = (150, 150, 180)
+        self.color_text_light = (230, 230, 255)
+        self.color_text_dim = (180, 180, 200)
+        self.color_tab_active = (80, 80, 110)
+        self.color_highlight = (144, 238, 144) # Verde claro
+        self.color_focus_outline = (255, 255, 0) # Amarillo para el foco
+
+        # Opciones del menú con valores por defecto
+        self.options = self._get_default_options()
+
+        self.focused_item_index = 0
+        self.sistema_layout = self._create_sistema_layout()
+        self.sonar_layout = self._create_sonar_layout()
+        self.marcas_layout = self._create_marcas_layout()
+        self.sonda_layout = self._create_sonda_layout()
+        self.item_rects = {}
+        self.puerto_com_dropdown_open = False
+        self.com_ports_list = []
+        self.scroll_offset = 0
+        self.content_height = 0
+        self.focus_on_tabs = False
+
+    def _get_default_options(self):
+        return {
+            # Opciones de la pestaña SONAR
+            'modo_presentac': 'COMBI-1',
+            'potencia_tx': 8,
+            'long_impulso': 8,
+            'ciclo_tx': 10,
+            'tvg_proximo': 6,
+            'tvg_lejano': 7,
+            'cag': 2,
+            'cag_2': 1,
+            'limitar_ruido': 3,
+            'curva_color': 1,
+            'respuesta_color': 1,
+            'anular_color': 0,
+            'promedio_eco': 1,
+            'rechazo_interf': 1,
+            'angulo_haz_hor': 'ANCHO',
+            'angulo_haz_ver': 'ANCHO',
+            'color': 1,
+            'borrar_marcas': 'DERROTA',
+            'nivel_alarma': 9,
+            'explor_auto': 'ON',
+            'sector_explor': '±10°',
+            'inclin_auto': 'ON',
+            'angulo_inclin': '±2-10°',
+            'transmision': 'ON',
+            'volumen_audio': 10,
+            'asignar_ajuste': 'TECLA F1',
+            'asignar_menu': None, # Placeholder for action
+
+            # Opciones de la pestaña MARCAS
+            'anillos_dist': '1/4R',
+            'escala_demora': 'ON',
+            'vector_corrnte': 'ON',
+            'direc_corrnte': 'HACIA',
+            'derrota_barco': '10R',
+            'rumbo': '32PSCM',
+            'rumbo_proa': '32PSCM',
+            'datos_corrnte': '32PSCM',
+            'evento_pesca': '32PSCM',
+            'otras_marcas': '±180°',
+            'datos_posicion': 'L/L',
+
+            # Opciones de la pestaña SONDA
+            'sonda_color': 1,
+            'sonda_escala': 160,
+            'sonda_desplazar_esc': 0,
+            'sonda_rechz_interf': 'ON',
+            'sonda_ganancia': 30,
+            'sonda_filtro_parasit': 20,
+            'sonda_avance_imagen': '2/1',
+            'sonda_curva_color': 'LINEAL',
+            'sonda_anular_color': 0,
+            'sonda_ajuste_calado': 0,
+
+            # Opciones de la pestaña SISTEMA
+            'iluminacion': 5,
+            'selec_present': 'TEMP',
+            'ajuste_proa': 0,
+            'subida_auto': 'OFF',
+            'mensaje_veloc': 'ON',
+            'puls_sinc_ext': 'OFF',
+            'veloc_autoexpl': 'BAJA',
+            'veloc_autoincl': 'BAJA',
+            'unidad': 'METROS',
+            'veloc_rumbo': 'DATO NAV',
+            'pulso_log': 200,
+            'puerto_com': 'Ninguno',
+            'port_formato': 'NMEA',
+            'port_baudios': 9600,
+            'datos_nav': 'GPS',
+            'escala_combi': 'DERECHA',
+            'indi_subtexto': 'ON',
+            'idioma': 'ESPANOL',
+            'test': 'OFF',
+            'aj_por_defecto': False
+        }
+
+    def _create_sistema_layout(self):
+        return [
+            {'label': 'ILUMINACION', 'key': 'iluminacion', 'type': 'numeric_adjustable', 'range': (1, 10)},
+            {'label': 'SELEC PRESENT', 'key': 'selec_present', 'type': 'selector', 'values': ['TEMP', 'CORRNTE']},
+            {'label': 'AJUSTE PROA', 'key': 'ajuste_proa', 'type': 'numeric_adjustable', 'range': (0, 359)},
+            {'label': 'SUBIDA AUTO', 'key': 'subida_auto', 'type': 'selector', 'values': ['OFF', '5-16 kn']},
+            {'label': 'MENSAJE VELOC', 'key': 'mensaje_veloc', 'type': 'selector', 'values': ['ON', 'OFF']},
+            {'label': 'PULS SINC EXT', 'key': 'puls_sinc_ext', 'type': 'selector', 'values': ['OFF', 'ON']},
+            {'label': 'VELOC AUTOEXPL', 'key': 'veloc_autoexpl', 'type': 'selector', 'values': ['BAJA', 'ALTA']},
+            {'label': 'VELOC AUTOINCL', 'key': 'veloc_autoincl', 'type': 'selector', 'values': ['BAJA', 'ALTA']},
+            {'label': 'UNIDAD', 'key': 'unidad', 'type': 'selector', 'values': ['METROS', 'PIES', 'BRAZAS', 'PA/BZS']},
+            {'label': 'VELOC / RUMBO', 'key': 'veloc_rumbo', 'type': 'selector', 'values': ['LOG/GIRO', 'CORRNTE', 'DATO NAV', 'GIRO+NAV']},
+            {'label': 'PULSO LOG', 'key': 'pulso_log', 'type': 'selector', 'values': [200, 400]},
+            {'label': 'PUERTO COM', 'key': 'puerto_com', 'type': 'dropdown'},
+            {'label': 'PORT FORMATO', 'key': 'port_formato', 'type': 'selector', 'values': ['NMEA', 'CIF']},
+            {'label': 'PORT BAUDIOS', 'key': 'port_baudios', 'type': 'selector', 'values': [19200, 9600, 4800, 2400]},
+            {'label': 'DATOS NAV', 'key': 'datos_nav', 'type': 'selector', 'values': ['GPS', 'LC', 'ESTIMA', 'TODOS']},
+            {'label': 'ESCALA COMBI', 'key': 'escala_combi', 'type': 'selector', 'values': ['DERECHA', 'IZQUIERDA']},
+            {'label': 'INDI SUBTEXTO', 'key': 'indi_subtexto', 'type': 'selector', 'values': ['OFF', 'ON']},
+            {'label': 'IDIOMA', 'key': 'idioma', 'type': 'selector', 'values': ['ENGLISH', 'JAPANESE', 'ESPANOL', 'DANSK', 'NEDERLND', 'FRANCAIS', 'ITALIANO', 'KOREAN', 'NORSK']},
+            {'label': 'TEST', 'key': 'test', 'type': 'selector', 'values': ['UNA VEZ', 'CONTINUO', 'PANEL', 'COLOR', 'PATTERN', 'SIO', 'ECO-1', 'ECO-2', 'ECO-3', 'ECO-4']},
+            {'label': 'AJ POR DEFECTO', 'key': 'aj_por_defecto', 'type': 'action', 'button_text': 'EJECUTAR'},
+        ]
+
+    def _create_sonar_layout(self):
+        return [
+            {'label': 'MODO PRESENTAC', 'key': 'modo_presentac', 'type': 'selector', 'values': ['COMBI-1', 'NORMAL', 'COMBI-2']},
+            {'label': 'POTENCIA TX', 'key': 'potencia_tx', 'type': 'numeric_adjustable', 'range': (1, 10)},
+            {'label': 'LONG IMPULSO', 'key': 'long_impulso', 'type': 'numeric_adjustable', 'range': (1, 10)},
+            {'label': 'CICLO TX', 'key': 'ciclo_tx', 'type': 'numeric_adjustable', 'range': (1, 10)},
+            {'label': 'TVG PROXIMO', 'key': 'tvg_proximo', 'type': 'numeric_adjustable', 'range': (1, 10)},
+            {'label': 'TVG LEJANO', 'key': 'tvg_lejano', 'type': 'numeric_adjustable', 'range': (1, 10)},
+            {'label': 'CAG', 'key': 'cag', 'type': 'numeric_adjustable', 'range': (1, 10)},
+            {'label': '2° CAG', 'key': 'cag_2', 'type': 'numeric_adjustable', 'range': (1, 10)},
+            {'label': 'LIMITAR RUIDO', 'key': 'limitar_ruido', 'type': 'numeric_adjustable', 'range': (1, 10)},
+            {'label': 'CURVA COLOR', 'key': 'curva_color', 'type': 'selector', 'values': [1, 2, 3, 4]},
+            {'label': 'RSPUESTA COLOR', 'key': 'respuesta_color', 'type': 'selector', 'values': [1, 2, 3, 4]},
+            {'label': 'ANULAR COLOR', 'key': 'anular_color', 'type': 'numeric_adjustable', 'range': (0, 10)},
+            {'label': 'PROMEDIO ECO', 'key': 'promedio_eco', 'type': 'numeric_adjustable', 'range': (0, 3)},
+            {'label': 'RECHAZ INTERF', 'key': 'rechazo_interf', 'type': 'numeric_adjustable', 'range': (0, 3)},
+            {'label': 'ANGULO HAZ HOR', 'key': 'angulo_haz_hor', 'type': 'selector', 'values': ['ANCHO', 'ESTRECHO']},
+            {'label': 'ANGULO HAZ VER', 'key': 'angulo_haz_ver', 'type': 'selector', 'values': ['ANCHO', 'ESTRECHO']},
+            {'label': 'COLOR', 'key': 'color', 'type': 'selector', 'values': [1, 2, 3, 4]},
+            {'label': 'BORRAR MARCAS', 'key': 'borrar_marcas', 'type': 'selector', 'values': ['DERROTA', 'BARCO', 'EVENTO', 'PESCA']},
+            {'label': 'NIVEL ALARMA', 'key': 'nivel_alarma', 'type': 'numeric_adjustable', 'range': (1, 10)},
+            {'label': 'EXPLOR AUTO', 'key': 'explor_auto', 'type': 'selector', 'values': ['ON', 'OFF']},
+            {'label': 'SECTOR EXPLOR', 'key': 'sector_explor', 'type': 'selector', 'values': ['±10°', '±20°', '±40°', '±60°']},
+            {'label': 'INCLIN AUTO', 'key': 'inclin_auto', 'type': 'selector', 'values': ['ON', 'OFF']},
+            {'label': 'ANGULO INCLIN', 'key': 'angulo_inclin', 'type': 'selector', 'values': ['±2-10°', '±4-14°', '±6-20°', '±10-26°']},
+            {'label': 'TRANSMISION', 'key': 'transmision', 'type': 'selector', 'values': ['ON', 'OFF']},
+            {'label': 'VOLUMEN AUDIO', 'key': 'volumen_audio', 'type': 'numeric_adjustable', 'range': (0, 10)},
+            {'label': 'ASIGNAR AJUSTE', 'key': 'asignar_ajuste', 'type': 'selector', 'values': ['TECLA F1', 'TECLA F2', 'TECLA F3', 'TECLA F4']},
+            {'label': 'ASIGNAR MENU', 'key': 'asignar_menu', 'type': 'action', 'button_text': 'EJECUTAR'},
+        ]
+
+    def _create_marcas_layout(self):
+        return [
+            {'label': 'ANILLOS DIST', 'key': 'anillos_dist', 'type': 'selector', 'values': ['1/4R', '1/2R', 'OFF']},
+            {'label': 'ESCALA DEMORA', 'key': 'escala_demora', 'type': 'selector', 'values': ['ON', 'OFF']},
+            {'label': 'VECTOR CORRNTE', 'key': 'vector_corrnte', 'type': 'selector', 'values': ['ON', 'OFF']},
+            {'label': 'DIREC CORRNTE', 'key': 'direc_corrnte', 'type': 'selector', 'values': ['HACIA', 'DESDE']},
+            {'label': 'DERROTA BARCO', 'key': 'derrota_barco', 'type': 'selector', 'values': ['10R', '5R', 'OFF']},
+            {'label': 'RUMBO', 'key': 'rumbo', 'type': 'selector', 'values': ['32PSCM', '360ºTRUE']},
+            {'label': 'RUMBO PROA', 'key': 'rumbo_proa', 'type': 'selector', 'values': ['32PSCM', '360ºTRUE', 'OFF']},
+            {'label': 'DATOS CORRNTE', 'key': 'datos_corrnte', 'type': 'selector', 'values': ['32PSCM', '360ºTRUE', '±180°', '360°']},
+            {'label': 'EVENTO/PESCA', 'key': 'evento_pesca', 'type': 'selector', 'values': ['32PSCM', '360ºTRUE', '±180°', '360°']},
+            {'label': 'OTRAS MARCAS', 'key': 'otras_marcas', 'type': 'selector', 'values': ['±180°', '360°']},
+            {'label': 'DATOS POSICION', 'key': 'datos_posicion', 'type': 'selector', 'values': ['L/L', 'TD']},
+        ]
+
+    def _create_sonda_layout(self):
+        return [
+            {'label': 'COLOR', 'key': 'sonda_color', 'type': 'selector', 'values': [1, 2, 3, 4]},
+            {'label': 'ESCALA', 'key': 'sonda_escala', 'type': 'numeric_adjustable', 'range': (10, 2000)},
+            {'label': 'DESPLAZAR ESC.', 'key': 'sonda_desplazar_esc', 'type': 'numeric_adjustable', 'range': (0, 500)},
+            {'label': 'RECHZ INTERF', 'key': 'sonda_rechz_interf', 'type': 'selector', 'values': ['ON', 'OFF']},
+            {'label': 'GANANCIA', 'key': 'sonda_ganancia', 'type': 'numeric_adjustable', 'range': (0, 100)},
+            {'label': 'FILTRO PARASIT', 'key': 'sonda_filtro_parasit', 'type': 'numeric_adjustable', 'range': (0, 100)},
+            {'label': 'AVANCE IMAGEN', 'key': 'sonda_avance_imagen', 'type': 'selector', 'values': ['2/1', '1/1', '1/2', '1/4', '1/8']},
+            {'label': 'CURVA COLOR', 'key': 'sonda_curva_color', 'type': 'selector', 'values': ['LINEAL', '1', '2', '3']},
+            {'label': 'ANULAR COLOR', 'key': 'sonda_anular_color', 'type': 'numeric_adjustable', 'range': (0, 10)},
+            {'label': 'AJUSTE CALADO', 'key': 'sonda_ajuste_calado', 'type': 'numeric_adjustable', 'range': (0, 200)},
+        ]
+
+    def toggle(self):
+        self.active = not self.active
+        if self.active:
+            self.focused_item_index = 0
+            self.com_ports_list = get_available_com_ports()
+
+    def handle_event(self, event):
+        if not self.active:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_m:
+                self.toggle()
+            return
+
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_m or event.key == pygame.K_ESCAPE:
+                self.toggle()
+                return
+
+            if self.puerto_com_dropdown_open: # Si el dropdown está abierto, las teclas de navegación no hacen nada más
+                return
+
+            # Determinar el layout activo para la navegación
+            if self.active_tab == 'SONAR':
+                active_layout = self.sonar_layout
+            elif self.active_tab == 'MARCAS':
+                active_layout = self.marcas_layout
+            elif self.active_tab == 'SONDA':
+                active_layout = self.sonda_layout
+            else: # SISTEMA
+                active_layout = self.sistema_layout
+
+            if self.focus_on_tabs:
+                if event.key == pygame.K_h:
+                    self.focus_on_tabs = False
+                elif event.key == pygame.K_o:
+                    current_tab_index = self.tabs.index(self.active_tab)
+                    self.active_tab = self.tabs[(current_tab_index + 1) % len(self.tabs)]
+                    self.focused_item_index = 0
+                elif event.key == pygame.K_l:
+                    current_tab_index = self.tabs.index(self.active_tab)
+                    self.active_tab = self.tabs[(current_tab_index - 1) % len(self.tabs)]
+                    self.focused_item_index = 0
+            else: # Focus is on the content
+                if event.key == pygame.K_y or event.key == pygame.K_UP:
+                    if self.focused_item_index > 0:
+                        self.focused_item_index -= 1
+                    else: # We are at the top item, move focus to tabs
+                        self.focus_on_tabs = True
+                elif event.key == pygame.K_h or event.key == pygame.K_DOWN:
+                    if self.focused_item_index < len(active_layout) - 1:
+                        self.focused_item_index += 1
+
+                # Handle value changes with O and L
+                if self.focused_item_index < len(active_layout):
+                    focused_item = active_layout[self.focused_item_index]
+                    key = focused_item['key']
+
+                    if focused_item['type'] in ['numeric_adjustable', 'numeric']:
+                        min_val, max_val = focused_item['range']
+                        if event.key == pygame.K_o:
+                            self.options[key] = min(self.options[key] + 1, max_val)
+                        elif event.key == pygame.K_l:
+                            self.options[key] = max(self.options[key] - 1, min_val)
+
+                    elif focused_item['type'] == 'selector':
+                        valid_values = focused_item.get('values', [])
+                        if valid_values:
+                            current_value = self.options.get(key)
+                            if current_value not in valid_values:
+                                current_value = valid_values[0]
+                            current_index = valid_values.index(current_value)
+
+                            if event.key == pygame.K_o:
+                                new_index = (current_index + 1) % len(valid_values)
+                                self.options[key] = valid_values[new_index]
+                            elif event.key == pygame.K_l:
+                                new_index = (current_index - 1) % len(valid_values)
+                                self.options[key] = valid_values[new_index]
+
+                    # Post-change logic (e.g., for volume)
+                    if focused_item['key'] == 'volumen_audio':
+                        if sonar_ping_sound:
+                            new_volume = self.options['volumen_audio'] / 10.0
+                            sonar_ping_sound.set_volume(new_volume)
+
+            # --- Auto-scroll logic ---
+            # This is a simplified calculation of item y-position and height
+            item_y = 0
+            item_h = 0
+            temp_y = 0
+            value_start_x = self.main_panel_rect.left + 20 + 180
+            for i, item in enumerate(active_layout):
+                item_h = self.font_item_label.get_height()
+                if item['type'] == 'selector':
+                    row_y = 0
+                    current_val_x = value_start_x
+                    max_h_in_row = 0
+                    for val in item['values']:
+                        val_surf = self.font_item_value.render(str(val), True, self.color_text_light)
+                        rect_w = val_surf.get_width() + 16
+                        rect_h = val_surf.get_height() + 4
+                        max_h_in_row = max(max_h_in_row, rect_h)
+                        if current_val_x + rect_w > self.main_panel_rect.right - 20:
+                            row_y += max_h_in_row + 5
+                            current_val_x = value_start_x
+                            max_h_in_row = rect_h
+                        current_val_x += rect_w + 5
+                    item_h = row_y + max_h_in_row
+
+                if i == self.focused_item_index:
+                    item_y = temp_y
+                    break
+                temp_y += item_h + 12
+
+            visible_height = self.main_panel_rect.height - 120 # content_margin_y * 2
+            if item_y < self.scroll_offset:
+                self.scroll_offset = item_y
+            elif item_y + item_h > self.scroll_offset + visible_height:
+                self.scroll_offset = item_y + item_h - visible_height
+
+
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            # Handle tab clicks
+            for i, tab_name in enumerate(self.tabs):
+                if hasattr(self, 'tab_rects') and i < len(self.tab_rects) and self.tab_rects[i].collidepoint(event.pos):
+                    if self.active_tab != tab_name:
+                        self.active_tab = tab_name
+                        self.focused_item_index = 0
+                    return None # Return None to signify event was handled
+
+            # Handle clicks within the active tab content
+            if self.active_tab == 'SONAR':
+                active_layout = self.sonar_layout
+            elif self.active_tab == 'MARCAS':
+                active_layout = self.marcas_layout
+            elif self.active_tab == 'SONDA':
+                active_layout = self.sonda_layout
+            else: # SISTEMA
+                active_layout = self.sistema_layout
+
+            # Handle dropdown box click first
+            if 'puerto_com' in self.item_rects and 'main_box' in self.item_rects['puerto_com']:
+                if self.item_rects['puerto_com']['main_box'].collidepoint(event.pos):
+                    self.puerto_com_dropdown_open = not self.puerto_com_dropdown_open
+                    self.focused_item_index = active_layout.index(next(item for item in active_layout if item['key'] == 'puerto_com'))
+                    return None # Event handled
+                elif self.puerto_com_dropdown_open:
+                    for i, rect in enumerate(self.item_rects['puerto_com'].get('items', [])):
+                        if rect.collidepoint(event.pos):
+                            self.options['puerto_com'] = self.com_ports_list[i]
+                            self.puerto_com_dropdown_open = False
+                            return None # Event handled
+                    # If click is outside dropdown items but dropdown is open, just close it
+                    self.puerto_com_dropdown_open = False
+                    return None # Event handled
+
+            # If not a dropdown interaction, check other elements
+            for idx, item_config in enumerate(active_layout):
+                key = item_config['key']
+                if key in self.item_rects:
+                    if item_config['type'] == 'selector':
+                        for i, rect in enumerate(self.item_rects[key]):
+                            if rect.collidepoint(event.pos):
+                                self.options[key] = item_config['values'][i]
+                                self.focused_item_index = idx
+                                return None # Event handled
+                    elif item_config['type'] == 'action':
+                        if self.item_rects[key][0].collidepoint(event.pos):
+                            self.focused_item_index = idx
+                            if key == 'aj_por_defecto':
+                                self.options = self._get_default_options()
+                                print("INFO: Configuración restaurada a los valores por defecto.")
+                                return None
+                            elif key == 'aj_por_defecto':
+                                self.options = self._get_default_options()
+                                print("INFO: Configuración restaurada a los valores por defecto.")
+                            else:
+                                print(f"INFO: Botón de acción '{key}' presionado (sin acción implementada).")
+                            self.focused_item_index = idx
+                            return None
+
+            # If click is outside the main panel, close the menu
+            if hasattr(self, 'main_panel_rect') and not self.main_panel_rect.collidepoint(event.pos):
+                self.toggle()
+                return None # Event handled
+
+    def draw(self, surface):
+        if not self.active: return
+
+        self.main_panel_rect = pygame.Rect(0, 0, 550, surface.get_height() - 100)
+        self.main_panel_rect.center = surface.get_rect().center
+        pygame.draw.rect(surface, self.color_bg, self.main_panel_rect, border_radius=10)
+        pygame.draw.rect(surface, self.color_border, self.main_panel_rect, 2, border_radius=10)
+
+        self.tab_rects = []
+        tab_y = self.main_panel_rect.top
+        current_x = self.main_panel_rect.left
+        for tab_name in self.tabs:
+            text_surf = self.font_tab.render(tab_name, True, self.color_text_light)
+            padding = 15
+            tab_rect = pygame.Rect(current_x, tab_y, text_surf.get_width() + 2 * padding, 40)
+            self.tab_rects.append(tab_rect)
+
+            if self.active_tab == tab_name:
+                pygame.draw.rect(surface, self.color_tab_active, tab_rect, border_top_left_radius=10, border_top_right_radius=10)
+                if self.focus_on_tabs:
+                    pygame.draw.rect(surface, self.color_focus_outline, tab_rect.inflate(2,2), 2, border_top_left_radius=10, border_top_right_radius=10)
+
+            surface.blit(text_surf, text_surf.get_rect(center=tab_rect.center))
+            current_x += tab_rect.width
+
+        if self.active_tab == 'SISTEMA':
+            self._draw_tab(surface, self.sistema_layout)
+        elif self.active_tab == 'SONAR':
+            self._draw_tab(surface, self.sonar_layout)
+        elif self.active_tab == 'SONDA':
+            self._draw_tab(surface, self.sonda_layout)
+        elif self.active_tab == 'MARCAS':
+            self._draw_tab(surface, self.marcas_layout)
+        else:
+            placeholder_text = self.font_tab.render(f"Pestaña {self.active_tab} en construcción.", True, self.color_text_dim)
+            surface.blit(placeholder_text, placeholder_text.get_rect(center=self.main_panel_rect.center))
+
+    def _draw_tab(self, surface, layout):
+        # Define content area within the main panel
+        content_margin_x = 20
+        content_margin_y = 60
+        content_area_rect = self.main_panel_rect.inflate(-content_margin_x*2, -content_margin_y*2)
+        content_area_rect.top = self.main_panel_rect.top + content_margin_y
+
+        # --- 1. Pre-calculate total content height (Dry Run) ---
+        total_content_height = 0
+        value_start_x_dry_run = content_area_rect.left + 180 # Relative to screen, for width calculation
+        for item in layout:
+            item_height = self.font_item_label.get_height()
+            if item['type'] == 'selector':
+                row_y = 0
+                current_val_x = value_start_x_dry_run
+                max_h_in_row = 0
+                for val in item['values']:
+                    val_text = str(val)
+                    val_surf = self.font_item_value.render(val_text, True, self.color_text_light)
+                    rect_w = val_surf.get_width() + 16 # padding
+                    rect_h = val_surf.get_height() + 4
+                    max_h_in_row = max(max_h_in_row, rect_h)
+                    if current_val_x + rect_w > self.main_panel_rect.right - content_margin_x:
+                        row_y += max_h_in_row + 5
+                        current_val_x = value_start_x_dry_run
+                        max_h_in_row = rect_h
+                    current_val_x += rect_w + 5
+                item_height = row_y + max_h_in_row
+            total_content_height += item_height + 12
+        self.content_height = total_content_height
+
+        # --- 2. Handle Scrolling Logic ---
+        visible_height = content_area_rect.height
+        has_scrollbar = self.content_height > visible_height
+
+        # Clamp scroll_offset
+        if has_scrollbar:
+            max_scroll = self.content_height - visible_height
+            self.scroll_offset = max(0, min(self.scroll_offset, max_scroll))
+        else:
+            self.scroll_offset = 0
+
+        # --- 3. Create a subsurface for clipping and scrolling ---
+        content_surface = pygame.Surface(content_area_rect.size, pygame.SRCALPHA)
+        content_surface.fill((0,0,0,0)) # Transparent background
+
+        # --- 4. Draw all items onto the subsurface with scroll offset ---
+        start_x = 0 # Relative to content_surface
+        start_y = 0 # Relative to content_surface
+        value_start_x = start_x + 180
+        current_y = start_y - self.scroll_offset
+        self.item_rects.clear()
+
+        for i, item in enumerate(layout):
+            item_start_y = current_y
+            item_content_height = self.font_item_label.get_height()
+            is_focused = (i == self.focused_item_index)
+
+            # --- Draw Label ---
+            label_surf = self.font_item_label.render(item['label'], True, self.color_text_light)
+            content_surface.blit(label_surf, (start_x, current_y))
+
+            # --- Draw Controls ---
+            if item['type'] in ['numeric_adjustable']:
+                value = self.options[item['key']]
+                if item['key'] in ['sonda_ganancia', 'sonda_filtro_parasit', 'sonda_ajuste_calado']:
+                    value_text = f"{value / 10.0:.1f}"
+                else:
+                    value_text = f"{value}"
+
+                if item['key'] == 'ajuste_proa': value_text += "°"
+                if item['key'] == 'sonda_ajuste_calado': value_text += " (m)"
+
+                value_surf = self.font_item_value.render(value_text, True, self.color_text_light)
+                content_surface.blit(value_surf, (value_start_x, current_y))
+            elif item['type'] == 'selector':
+                self.item_rects[item['key']] = []
+                current_val_x = value_start_x
+                row_y = current_y
+                max_h_in_row = 0
+                for val in item['values']:
+                    val_text = str(val)
+                    val_surf = self.font_item_value.render(val_text, True, self.color_text_light)
+                    padding = 8
+                    rect_w = val_surf.get_width() + 2 * padding
+                    rect_h = val_surf.get_height() + 4
+                    max_h_in_row = max(max_h_in_row, rect_h)
+                    if current_val_x + rect_w > content_area_rect.width:
+                        row_y += max_h_in_row + 5
+                        current_val_x = value_start_x
+                        max_h_in_row = rect_h
+                    rect = pygame.Rect(current_val_x, row_y - 2, rect_w, rect_h)
+                    try:
+                        list_item_type = type(val)
+                        option_val = list_item_type(self.options[item['key']])
+                        if option_val == val:
+                            pygame.draw.rect(content_surface, self.color_highlight, rect, border_radius=4)
+                    except (ValueError, KeyError): pass
+                    content_surface.blit(val_surf, val_surf.get_rect(center=rect.center))
+                    self.item_rects[item['key']].append(rect.move(content_area_rect.topleft)) # Store screen-space rect
+                    current_val_x += rect.width + 5
+                item_content_height = (row_y + max_h_in_row) - current_y
+            elif item['type'] == 'action':
+                 button_text = item['button_text']
+                 button_surf = self.font_item_value.render(button_text, True, self.color_text_light)
+                 padding = 10
+                 rect = pygame.Rect(value_start_x, current_y - 2, button_surf.get_width() + 2 * padding, button_surf.get_height() + 4)
+                 pygame.draw.rect(content_surface, (80, 80, 100), rect, border_radius=4)
+                 content_surface.blit(button_surf, button_surf.get_rect(center=rect.center))
+                 self.item_rects[item['key']] = [rect.move(content_area_rect.topleft)]
+                 item_content_height = rect.height
+
+            # --- Draw Focus Outline ---
+            if is_focused and not self.focus_on_tabs and not self.puerto_com_dropdown_open:
+                focus_rect = pygame.Rect(start_x - 5, item_start_y - 3, content_area_rect.width - 10, item_content_height + 6)
+                pygame.draw.rect(content_surface, self.color_focus_outline, focus_rect, 1, border_radius=4)
+
+            current_y += item_content_height + 12
+
+        # --- 5. Blit the clipped content surface to the screen ---
+        surface.blit(content_surface, content_area_rect.topleft)
+
+        # --- 6. Draw Scrollbar if needed ---
+        if has_scrollbar:
+            scrollbar_area = pygame.Rect(self.main_panel_rect.right - 15, self.main_panel_rect.top + content_margin_y, 10, visible_height)
+            pygame.draw.rect(surface, (40,40,60), scrollbar_area) # Scrollbar track
+
+            handle_height = max(20, visible_height * (visible_height / self.content_height))
+            handle_y = scrollbar_area.top + (self.scroll_offset / self.content_height) * visible_height
+            scrollbar_handle = pygame.Rect(scrollbar_area.left, handle_y, 10, handle_height)
+            pygame.draw.rect(surface, (180, 180, 200), scrollbar_handle, border_radius=5)
+
+        # --- 7. Draw Dropdown (must be drawn on main surface to overlay everything) ---
+        if self.puerto_com_dropdown_open:
+            focused_item = layout[self.focused_item_index]
+            if focused_item['key'] == 'puerto_com':
+                # We need the on-screen rect, which we calculate from its relative position
+                main_box_screen_rect = self.item_rects['puerto_com'][0].move(-self.scroll_offset, 0)
+                dropdown_y = main_box_screen_rect.bottom + 2
+                list_rect = pygame.Rect(main_box_screen_rect.left, dropdown_y, main_box_screen_rect.width, len(self.com_ports_list) * 22)
+                pygame.draw.rect(surface, self.color_bg, list_rect)
+                pygame.draw.rect(surface, self.color_border, list_rect, 1)
+                for i, com_port in enumerate(self.com_ports_list):
+                    item_rect = pygame.Rect(list_rect.left, dropdown_y, list_rect.width, 22)
+                    item_surf = self.font_item_value.render(com_port, True, self.color_text_light)
+                    surface.blit(item_surf, item_surf.get_rect(centery=item_rect.centery, left=item_rect.left + 5))
+                    self.item_rects['puerto_com'].append(item_rect) # This part is tricky, rects are now dynamic
+                    dropdown_y += item_rect.height
+
+# --- Persistencia de Configuración (save/load) ---
 CONFIG_FILE = "config.json"
 
 def save_settings():
-    """Saves current settings to a JSON file."""
-    settings_to_save = {
-        'port': puerto,
-        'baudrate': baudios,
-        'gain': current_gain,
-        'range_index': current_range_index,
-        'tilt_angle': current_tilt_angle,
-        'unit': current_unit,
-        'menu_options': menu_options_values
-    }
-    try:
-        with open(CONFIG_FILE, 'w') as f:
-            json.dump(settings_to_save, f, indent=4)
-        # print("DEBUG: Settings saved successfully.") # Optional
-    except IOError as e:
-        print(f"Error: No se pudo guardar la configuración en {CONFIG_FILE}: {e}")
+    global puerto, baudios, current_gain, current_range_index, current_tilt_angle, menu
+    if 'menu' in globals() and isinstance(menu, MenuSystem):
+        # Sincronizar variables principales con el menú antes de guardar
+        puerto = menu.options.get('puerto_com', None)
+        baudios = menu.options.get('port_baudios', 9600)
+
+        settings_to_save = {
+            'gain': current_gain,
+            'range_index': current_range_index,
+            'tilt_angle': current_tilt_angle,
+            'menu_options': menu.options
+        }
+        try:
+            with open(CONFIG_FILE, 'w') as f:
+                json.dump(settings_to_save, f, indent=4)
+        except IOError as e:
+            print(f"Error al guardar configuración: {e}")
 
 def load_settings():
-    """Loads settings from a JSON file and applies them."""
-    global puerto, baudios, current_gain, current_range_index, current_tilt_angle, current_unit, menu_options_values, \
-             active_color_scheme_idx, current_colors, current_volume, sonar_ping_sound
-    
+    global puerto, baudios, current_gain, current_range_index, current_tilt_angle, menu, current_unit
     try:
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, 'r') as f:
                 loaded_settings = json.load(f)
             
-            print(f"INFO: Cargando configuración desde {CONFIG_FILE}")
-            
-            # Apply loaded settings with validation and fallbacks
-            puerto = loaded_settings.get('port', puerto)
-            baudios = loaded_settings.get('baudrate', baudios)
             current_gain = loaded_settings.get('gain', current_gain)
             current_range_index = loaded_settings.get('range_index', current_range_index)
             current_tilt_angle = loaded_settings.get('tilt_angle', current_tilt_angle)
-            current_unit = loaded_settings.get('unit', current_unit)
             
-            # Load menu options, which is a dictionary
-            if 'menu_options' in loaded_settings and isinstance(loaded_settings['menu_options'], dict):
-                menu_options_values.update(loaded_settings['menu_options'])
-
-            # After loading menu_options_values, we need to re-apply settings that depend on it.
-            # 1. Color Scheme
-            active_color_scheme_idx = menu_options_values.get("color_menu", active_color_scheme_idx)
-            current_colors = color_schemes.get(active_color_scheme_idx, color_schemes[3]) # Fallback to default scheme
-
-            # 2. Audio Volume
-            current_volume = menu_options_values.get("volumen_audio", current_volume * 10) / 10.0
-            if sonar_ping_sound:
-                sonar_ping_sound.set_volume(current_volume)
-
+            if 'menu' in globals() and isinstance(menu, MenuSystem) and 'menu_options' in loaded_settings:
+                menu.options.update(loaded_settings['menu_options'])
+                # Sincronizar estado principal con las opciones cargadas
+                puerto = menu.options.get('puerto_com', None)
+                baudios = menu.options.get('port_baudios', 9600)
+                current_unit = menu.options.get('unidad', 'METROS').upper()
     except (IOError, json.JSONDecodeError) as e:
-        print(f"Advertencia: No se pudo cargar la configuración desde {CONFIG_FILE}. Se usarán los valores por defecto. Error: {e}")
-    except Exception as e:
-        print(f"Error inesperado al cargar la configuración: {e}. Se usarán los valores por defecto.")
-
-# --- End Settings Persistence ---
+        print(f"Advertencia al cargar configuración: {e}")
 
 
 # Definimos algunos colores
@@ -576,21 +1126,28 @@ pygame.display.set_caption("SIMULADOR SONAR")
 pantalla = screen # Restaurar la asignación de pantalla para que sea la misma superficie que screen
 
 # Define Range Presets and Current Range State Variable (Moved up)
-RANGE_PRESETS_METERS = [100, 150, 200, 250, 300, 350, 400, 450, 500, 600, 800, 1000, 1200, 1600]
+RANGE_PRESETS_METERS = [50, 85, 100, 150, 200, 250, 300, 350, 400, 450, 500, 600, 800, 1000, 1200, 1600]
 RANGE_PRESETS_BRAZAS = [50, 75, 100, 125, 150, 175, 200, 225, 250, 300, 400, 500, 600, 800]
+RANGE_PRESETS_PIES = [300, 450, 600, 750, 900, 1050, 1200, 1350, 1500, 1800, 2400, 3000, 3600, 4800]
 
 current_unit = "METERS"
 range_presets_map = {
-    "METERS": RANGE_PRESETS_METERS,
-    "BRAZAS": RANGE_PRESETS_BRAZAS
+    "METROS": RANGE_PRESETS_METERS,
+    "BRAZAS": RANGE_PRESETS_BRAZAS,
+    "PIES": RANGE_PRESETS_PIES,
+    "PA/BZS": RANGE_PRESETS_BRAZAS
 }
 range_display_suffix_map = { # Units removed from R value displays
-    "METERS": "",
-    "BRAZAS": ""
+    "METROS": "",
+    "BRAZAS": "",
+    "PIES": "",
+    "PA/BZS": ""
 }
 sonar_rose_unit_text_map = {
-    "METERS": "(m)",
-    "BRAZAS": "(fm)"
+    "METROS": "(m)",
+    "BRAZAS": "(fm)",
+    "PIES": "(ft)",
+    "PA/BZS": "(fm)"
 }
 
 # Initialize current_range_index (Moved up)
@@ -599,11 +1156,6 @@ try:
     current_range_index = RANGE_PRESETS_METERS.index(default_range_value_meters)
 except ValueError:
     current_range_index = 4
-
-# --- Puerto Pop-up Auto-Close Timer Variables ---
-puerto_popup_auto_close_start_time = None
-PUERTO_POPUP_AUTO_CLOSE_DELAY = 2000 # milliseconds (2 seconds)
-# ---
 
 # Font initialization
 font = pygame.font.Font(None, 24) # Using a default system font
@@ -614,116 +1166,12 @@ font_size_50 = pygame.font.Font(None, 50)
 font_size_54 = pygame.font.Font(None, 54)
 font_menu_item = pygame.font.Font(None, 20) # New font for menu items
 
-# --- Button Definitions & Initial Surfaces (Now correctly placed after font and maps) ---
-# These surfaces will be re-rendered if colors change
-button_unidades_text_surface = None # Will be rendered in main loop or when colors change
-button_unidades_rect = pygame.Rect(0,0,0,0) # Placeholder, will be defined in main loop
+# --- OLD UI ELEMENT DEFINITIONS REMOVED ---
+# This section previously contained variables for the old button-based
+# menu popups (show_puerto_popup, menu_options_values, etc.).
+# They have been removed to make way for the new MenuSystem class.
 active_sonar_rose_unit_surface = None # Will be rendered in main loop or when colors change
-show_unidades_popup = False # For controlling popup visibility
-
-# Pop-up UI elements (placeholders and pre-rendered text)
-# These surfaces will be re-rendered if colors change
-popup_main_rect = pygame.Rect(0,0,0,0) # For Unidades popup
-popup_metros_text_surface = None # font.render("METROS", True, BLANCO, NEGRO)
-popup_metros_option_rect = pygame.Rect(0,0,0,0)
-popup_brazas_text_surface = None # font.render("BRAZAS", True, BLANCO, NEGRO)
-popup_brazas_option_rect = pygame.Rect(0,0,0,0)
-
-# --- "Puerto" (COM Port Selection) Pop-up State and UI Variables ---
-show_puerto_popup = False
-selected_com_port_in_popup = None # Stores the device name string
-selected_baud_rate_in_popup = 9600 # Default, will store chosen baud rate
-show_com_port_dropdown = False
-show_baud_rate_dropdown = False
-available_com_ports_list = [] # Will be populated by get_available_com_ports()
-available_baud_rates_list = [4800, 9600, 19200, 38400, 57600, 115200]
-puerto_popup_message = "" # For status/error messages in the port pop-up
-
-# "Puerto" button (main screen)
-# These surfaces will be re-rendered if colors change
-button_puerto_text_surface = None # font.render("PUERTO", True, BLANCO, NEGRO)
-button_puerto_rect = pygame.Rect(0,0,0,0) # Positioned in main loop
-
-# "Menú" button (main screen)
-button_menu_text_surface = None # font.render("MENÚ", True, BLANCO, NEGRO)
-button_menu_rect = pygame.Rect(0,0,0,0) # Positioned in main loop, likely top-right
-
-# "Puerto" Pop-up elements (rects will be defined dynamically when pop-up is shown)
-puerto_popup_main_rect = pygame.Rect(0,0,0,0)
-puerto_popup_select_port_rect = pygame.Rect(0,0,0,0) # Clickable area to show port list
-puerto_popup_select_baud_rect = pygame.Rect(0,0,0,0) # Clickable area to show baud list
-puerto_popup_apply_button_rect = pygame.Rect(0,0,0,0)
-puerto_popup_cancel_button_rect = pygame.Rect(0,0,0,0)
-puerto_popup_port_list_item_rects = [] # For clickable port options
-puerto_popup_baud_list_item_rects = [] # For clickable baud options
-
-# Pre-rendered text for "Puerto" pop-up (can be done once, text color will adapt)
-# These surfaces will be re-rendered if colors change
-puerto_popup_title_surf = None # font_large.render("Configurar Puerto", True, BLANCO)
-puerto_popup_com_label_surf = None # font.render("Puerto COM:", True, BLANCO)
-puerto_popup_baud_label_surf = None # font.render("Baudios:", True, BLANCO)
-puerto_popup_apply_text_surf = None # font.render("Aplicar", True, BLANCO, NEGRO) # Button text
-puerto_popup_cancel_text_surf = None # font.render("Cancelar", True, BLANCO, NEGRO) # Button text
-# --- End "Puerto" Pop-up State and UI Variables ---
-
-# --- Main Menu Pop-up State and Option Variables ---
-show_main_menu_popup = False
-# global_menu_panel_rect = None # Initialized before main loop
-interactive_menu_item_rects = {} # Will store rects of interactive elements in the menu
-
-# Default values for menu options
-menu_options_values = {
-    "potencia_tx": 5,      # 1-10
-    "long_impulso": 5,     # 1-10
-    "ciclo_tx": 5,         # 1-10
-    "tvg_proximo": 5,      # 1-10
-    "tvg_lejano": 5,       # 1-10
-    "cag": 5,              # 1-10
-    "cag_2": 5,            # 1-10 (2° CAG)
-    "limitar_ruido": 5,    # 1-10
-    "curva_color": 1,      # 1-4 (Square Red)
-    "respuesta_color": 1,  # 1-4 (Square Red)
-    "anular_color": 0,     # 0 (Placeholder, may become toggle or specific values later)
-    "promedio_eco": 1,     # 1-3 (Dropdown)
-    "rechazo_interf": 1,   # 1-3 (Dropdown)
-    "angulo_haz_hor": "ANCHO", # "ANCHO", "ESTRECHO" (Square Red)
-    "angulo_haz_ver": "ANCHO", # "ANCHO", "ESTRECHO" (Square Red)
-    "color_menu": 1,         # 1-4 (Square Green Light) - Key for "COLOR" option
-    # BORRAR MARCAS items are action buttons, not value states here
-    "nivel_alarma": 9,     # 1-10 (Dropdown)
-    "explor_auto": "ON",   # "ON", "OFF" (Square Green Light)
-    "sector_explor": "±10°", # Dropdown with specific strings
-    "inclin_auto": "ON",   # "ON", "OFF" (Square Green Light)
-    "angulo_inclin": "±2-10°", # Dropdown with specific strings
-    "transmision": "ON",   # "ON", "OFF" (Square Green Light)
-    "volumen_audio": 10,     # 1-10 (Dropdown)
-    # ASIGNAR AJUSTE and ASIGNAR MENU are placeholders/actions, not direct value states here
-    # "nivel_alarma": 9,      # REMOVED
-    # "explor_auto": "ON",    # REMOVED
-    # "sector_explor": "±10°",  # REMOVED
-    # "inclin_auto": "ON",    # REMOVED
-    # "angulo_inclin": "±2-10°",  # REMOVED
-}
-
-# States for individual dropdowns within the main menu
-menu_dropdown_states = {
-    "potencia_tx": False,
-    "long_impulso": False,
-    "ciclo_tx": False,
-    "tvg_proximo": False,
-    "tvg_lejano": False,
-    "cag": False,
-    "cag_2": False,
-    "limitar_ruido": False,
-    "anular_color": False,      # Will be a dropdown 1-10 as per original full list
-    "promedio_eco": False,
-    "rechazo_interf": False,
-    # "nivel_alarma": False,     # REMOVED
-    # "sector_explor": False,    # REMOVED
-    # "angulo_inclin": False,    # REMOVED
-    "volumen_audio": False
-}
-# --- End Main Menu Pop-up State and Option Variables ---
+# --- END REMOVED UI ELEMENT DEFINITIONS ---
 
 # --- NMEA Transition State ---
 prev_serial_port_available = False # Tracks if NMEA was available in the previous frame for conversion logic
@@ -746,20 +1194,13 @@ current_sweep_radius_pixels = 0
 # --- End Sonar Sweep Variables ---
 
 # --- Audio Volume ---
-current_volume = 1.0 # Max volume (0.0 to 1.0 for pygame)
+# The global `current_volume` has been removed.
+# The volume is now managed via `menu.options['volumen_audio']`.
 # --- End Audio Volume ---
 
 # --- Load Sonar Sound ---
-try:
-    # Construct path to sound file relative to the script's location
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    sound_file_path = os.path.join(script_dir, "eco.mp3")
-    sonar_ping_sound = pygame.mixer.Sound(sound_file_path)
-    sonar_ping_sound.set_volume(current_volume) # Establecer volumen inicial
-except pygame.error as e:
-    print(f"Advertencia: No se pudo cargar el archivo de sonido '{sound_file_path if 'sound_file_path' in locals() else 'eco.mp3'}': {e}")
-    print("El programa continuará sin sonido de barrido.")
-    sonar_ping_sound = None
+# This is loaded after the menu is initialized, so we can set the initial volume.
+sonar_ping_sound = None
 # --- End Load Sonar Sound ---
 
 # Text string definitions (already added in previous step, kept for completeness)
@@ -900,7 +1341,7 @@ def handle_key_events(event_key, circle_center_x_param, circle_center_y_param, d
                 dy = mouse_cursor_y - circle_center_y_param # Pygame y is inverted for visual angle
                 visual_angle_rad = math.atan2(dx, -dy) # atan2(x,y) for bearing from North axis
                 visual_bearing_deg = (math.degrees(visual_angle_rad) + 360) % 360
-                true_bearing_deg = (visual_bearing_deg + current_ship_heading) % 360
+                true_bearing_deg = (visual_bearing_deg + effective_heading) % 360
 
                 start_point = Point(latitude=current_ship_lat_deg, longitude=current_ship_lon_deg)
                 if distance_m_from_ship < 0: distance_m_from_ship = 0 # Should not happen with sqrt
@@ -2530,21 +2971,28 @@ hecho = False
 
 angulo = 0
 
-# Store rects of drawn interactive elements for click handling (main menu)
-# This needs to be global or passed around if click handling is outside the main loop's direct scope
-# For now, keeping it within the main loop's scope and ensuring it's cleared/updated.
-# Declared global earlier, but ensuring it's clear it's used here.
-# interactive_menu_item_rects = {} # This is now initialized inside the menu drawing block
-global_menu_panel_rect = None # Initialize here, before the main loop
-
 # --- Performance Optimization Variables ---
 sweep_surface = None
 last_sweep_surface_size = (0, 0)
 # ---
 
-# --- Load Settings on Startup ---
+# --- INICIALIZACIÓN PRINCIPAL ---
+menu = MenuSystem()
 load_settings()
-# ---
+# Sincronizar estado principal con las opciones del menú cargadas
+current_unit = menu.options.get('unidad', 'METROS').upper()
+
+# Cargar sonido y establecer volumen inicial desde la configuración
+try:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    sound_file_path = os.path.join(script_dir, "eco.mp3")
+    sonar_ping_sound = pygame.mixer.Sound(sound_file_path)
+    initial_volume = menu.options.get('volumen_audio', 10) / 10.0
+    sonar_ping_sound.set_volume(initial_volume)
+except pygame.error as e:
+    print(f"Advertencia: No se pudo cargar 'eco.mp3': {e}")
+    sonar_ping_sound = None
+
 
 # --- Auto-connect on Startup ---
 if puerto:
@@ -2606,6 +3054,31 @@ sound_triggered_for_cardumen_echo = False # Para evitar múltiples disparos por 
 # --- Fin Variables para el Retardo del Sonido ---
 
 while not hecho:
+    # Sincronizar variables que el menú puede cambiar
+    current_unit = menu.options.get('unidad', 'METROS').upper()
+    active_color_scheme_idx = menu.options.get('color', 3)
+    current_colors = color_schemes[active_color_scheme_idx]
+    nuevo_puerto = menu.options.get('puerto_com', None)
+    nuevos_baudios = menu.options.get('port_baudios', 9600)
+
+    # Lógica para reconectar el puerto serie si cambia en el menú
+    if nuevo_puerto != puerto or nuevos_baudios != baudios:
+        if ser:
+            ser.close()
+        puerto = nuevo_puerto
+        baudios = nuevos_baudios
+        if puerto and puerto != "Ninguno":
+            try:
+                ser = serial.Serial(puerto, baudios, timeout=1)
+                serial_port_available = True
+                print(f"Conectado al puerto {puerto} a {baudios} baudios.")
+            except serial.SerialException as e:
+                print(f"No se pudo conectar al puerto {puerto}: {e}")
+                ser = None
+                serial_port_available = False
+        else:
+            ser = None
+            serial_port_available = False
     
     # --- Recalcular dimensiones de UI basadas en el tamaño actual de la ventana (`dimensiones`) ---
     # Primero, definir el ancho del panel de datos. Podría ser fijo o un porcentaje.
@@ -2664,7 +3137,7 @@ while not hecho:
     mouse_x, mouse_y = pygame.mouse.get_pos()
     dist_to_center = math.sqrt((mouse_x - circle_center_x)**2 + (mouse_y - circle_center_y)**2)
 
-    if dist_to_center <= display_radius_pixels:
+    if not menu.active and dist_to_center <= display_radius_pixels:
         pygame.mouse.set_visible(False)
         ui_state["show_plus_cursor"] = True
         ui_state["mouse_cursor_pos"] = (mouse_x, mouse_y)
@@ -2779,30 +3252,18 @@ while not hecho:
 
     # --- Hover Logic for Target Markers ---
     ui_state['hovered_marker_index'] = None # Reset hover state each frame
-    if not show_unidades_popup and not show_puerto_popup and not show_main_menu_popup: # Also check main menu
+    if not menu.active:
         for i, marker_data in enumerate(target_markers):
             marker_data['is_hovered'] = False # Reset individual hover state
             if marker_data['current_screen_pos']:
                 mx, my = marker_data['current_screen_pos']
-                # Use marker_icon_size for collision rect, already defined in drawing section
-                # Make sure marker_icon_size is accessible here or use its value (18)
-                marker_icon_size = 18 # Defined here for clarity
+                marker_icon_size = 18
                 hover_rect = pygame.Rect(mx - marker_icon_size // 2, my - marker_icon_size // 2, marker_icon_size, marker_icon_size)
                 if hover_rect.collidepoint(mouse_x, mouse_y):
                     ui_state['hovered_marker_index'] = i
                     marker_data['is_hovered'] = True
-                    break # Only one marker can be hovered at a time
+                    break
     # --- End Hover Logic ---
-
-    # --- Puerto Pop-up Auto-Close Logic ---
-    if show_puerto_popup and puerto_popup_auto_close_start_time is not None:
-        if pygame.time.get_ticks() - puerto_popup_auto_close_start_time >= PUERTO_POPUP_AUTO_CLOSE_DELAY:
-            show_puerto_popup = False
-            show_com_port_dropdown = False  # Ensure dropdowns are also closed
-            show_baud_rate_dropdown = False
-            puerto_popup_auto_close_start_time = None # Reset timer
-            # puerto_popup_message = "" # Optionally clear message here or let it persist
-    # --- End Puerto Pop-up Auto-Close Logic ---
 
     # --- Update Ship Track ---
     update_ship_track()
@@ -2831,7 +3292,7 @@ while not hecho:
         sweep_increment_ppf = sweep_pixels_per_second / FPS
     
     # --- Sonar Sweep Animation Logic ---
-    if menu_options_values["transmision"] == "ON":
+    if menu.options.get("transmision") == "ON":
         current_sweep_radius_pixels += sweep_increment_ppf
         if current_sweep_radius_pixels > display_radius_pixels:
             current_sweep_radius_pixels = 0 # Reset sweep
@@ -2839,10 +3300,7 @@ while not hecho:
             if sonar_ping_sound: # Restaurar el sonido original del ciclo de barrido
                 sonar_ping_sound.play() 
     else:
-        # If transmission is OFF, we can choose to reset the sweep
-        # or leave it at its current position. Resetting is cleaner.
         current_sweep_radius_pixels = 0
-        # Ensure sound is stopped if it was somehow playing or cued
         if sonar_ping_sound and pygame.mixer.get_busy(): 
             sonar_ping_sound.stop() 
             
@@ -2875,17 +3333,20 @@ while not hecho:
     if current_unit == "BRAZAS":
         max_rango_actual_metros *= 1.8288
     
-    APERTURA_HAZ_VERTICAL_SONAR_DEG = 15.0 # Como se especificó
+    # Conectar la opción del menú 'angulo_haz_ver' a la lógica
+    angulo_haz_ver_str = menu.options.get('angulo_haz_ver', 'ANCHO')
+    apertura_haz_vertical_deg = 15.0 if angulo_haz_ver_str == 'ANCHO' else 7.5
+
     info_interseccion_cardumen = calcular_interseccion_sonar_cardumen(
         pos_rel_cardumen,
         current_tilt_angle, # El tilt actual del sonar
-        APERTURA_HAZ_VERTICAL_SONAR_DEG,
+        apertura_haz_vertical_deg,
         max_rango_actual_metros
     )
     # --- Fin Actualización y Lógica del Cardumen ---
 
     # --- Lógica de Programación y Reproducción del Sonido del Eco con Retardo ---
-    if menu_options_values["transmision"] == "ON" and sonar_ping_sound and \
+    if menu.options.get("transmision") == "ON" and sonar_ping_sound and \
        'info_interseccion_cardumen' in locals() and info_interseccion_cardumen and \
        info_interseccion_cardumen.get("intensidad_factor", 0) > 0.1: # Solo si hay un eco significativo
 
@@ -2917,185 +3378,32 @@ while not hecho:
     # --- Fin Lógica de Sonido del Eco ---
 
 
-    for evento in pygame.event.get():  # El usuario hizo algo
-        if evento.type == pygame.QUIT: # Si el usuario hace click sobre cerrar
-            hecho = True                 # Marca que ya lo hemos hecho, de forma que abandonamos el bucole
-        elif evento.type == pygame.VIDEORESIZE:
-            dimensiones[0] = evento.w
-            dimensiones[1] = evento.h
-            # screen = pygame.display.set_mode(dimensiones, pygame.RESIZABLE) # Re-crear screen
-            # No es estrictamente necesario re-crear `screen` aquí si solo actualizamos `dimensiones`
-            # y todos los cálculos de UI en el bucle principal dependen de `dimensiones`.
-            # Pygame maneja internamente la redimensión de la superficie devuelta por set_mode con RESIZABLE.
-            # Lo importante es que nuestros cálculos usen las nuevas `dimensiones`.
-            print(f"Ventana redimensionada a: {dimensiones}") # Debug
+    for evento in pygame.event.get():
+        if evento.type == pygame.QUIT:
+            hecho = True
         
-        if evento.type == pygame.KEYDOWN:
-            # Ensure current_range_index is valid before accessing presets for S_max
-            if current_range_index >= len(range_presets_map[current_unit]):
-                current_range_index = len(range_presets_map[current_unit]) - 1
-            s_max_for_event = range_presets_map[current_unit][current_range_index]
+        action = menu.handle_event(evento)
+        if action == 'clear_markers':
+            target_markers.clear()
+            print("INFO: Todas las marcas de derrota han sido borradas.")
 
-            handle_key_events(evento.key, 
-                              circle_center_x, circle_center_y, 
-                              display_radius_pixels, s_max_for_event) # Call the new function with new params
-        
-        if evento.type == pygame.MOUSEBUTTONDOWN:
-            if evento.button == 1: # Left mouse button
-                if not show_unidades_popup and not show_puerto_popup and not show_main_menu_popup: # Process main screen buttons only if ALL popups are closed
-                    if button_unidades_rect.collidepoint(evento.pos):
-                        show_unidades_popup = True 
-                    elif button_puerto_rect.collidepoint(evento.pos): 
-                        show_puerto_popup = True
-                        available_com_ports_list = get_available_com_ports()
-                        selected_com_port_in_popup = puerto if puerto else (available_com_ports_list[0] if available_com_ports_list else None)
-                        selected_baud_rate_in_popup = baudios
-                        puerto_popup_message = ""
-                        show_com_port_dropdown = False 
-                        show_baud_rate_dropdown = False
-                    elif button_menu_rect.collidepoint(evento.pos): 
-                        show_main_menu_popup = True # Open main menu
-                        # Other popups are already confirmed closed by outer if
-                        # Reset individual dropdown states when opening main menu
-                        for key in menu_dropdown_states:
-                            menu_dropdown_states[key] = False
-                
-                elif show_main_menu_popup: # Main Menu Pop-up is showing
-                    # --- Click Handling for Main Menu ---
-                    # First, check if the click was on the main menu button itself (to toggle it off)
-                    if button_menu_rect.collidepoint(evento.pos):
-                        show_main_menu_popup = False
-                        # Resetting dropdowns when menu is closed by its button
-                        for key in menu_dropdown_states:
-                            menu_dropdown_states[key] = False
-                        # No further click processing needed for this event if menu button was clicked
-                    else:
-                        clicked_on_menu_element = False
-                        if 'interactive_menu_item_rects' in globals():
-                            for option_key, rect_info in interactive_menu_item_rects.items():
-                                if option_key in menu_dropdown_states and rect_info and 'value_box' in rect_info and 'items' in rect_info and 'item_values' in rect_info:
-                                    if handle_menu_dropdown_click(evento.pos, option_key,
-                                                                 rect_info['value_box'],
-                                                                 rect_info['items'],
-                                                                 rect_info['item_values']):
-                                        clicked_on_menu_element = True
-                                        break 
-                                elif option_key in menu_options_values and not (option_key in menu_dropdown_states): 
-                                    if rect_info and 'squares' in rect_info and 'values' in rect_info:
-                                        if handle_square_selector_click(evento.pos, option_key,
-                                                                        rect_info['squares'],
-                                                                        rect_info['values']):
-                                            clicked_on_menu_element = True
-                                            break 
-                        
-                        if not clicked_on_menu_element:
-                            if 'global_menu_panel_rect' in globals() and global_menu_panel_rect and \
-                               not global_menu_panel_rect.collidepoint(evento.pos): 
-                                    show_main_menu_popup = False
-                                    for key in menu_dropdown_states: # Also reset dropdowns
-                                        menu_dropdown_states[key] = False
-                        # --- End Click Handling for Main Menu ---
+        if not menu.active:
+            if evento.type == pygame.VIDEORESIZE:
+                dimensiones[0], dimensiones[1] = evento.w, evento.h
+                print(f"Ventana redimensionada a: {dimensiones}") # Debug
 
-                elif show_unidades_popup: # Unidades Pop-up is showing
-                    if popup_metros_option_rect.collidepoint(evento.pos):
-                        current_unit = "METERS"
-                        try:
-                            default_range_value_meters = 300 
-                            current_range_index = RANGE_PRESETS_METERS.index(default_range_value_meters)
-                        except ValueError:
-                            current_range_index = 4 
-                        active_sonar_rose_unit_surface = font.render(sonar_rose_unit_text_map[current_unit], True, BLANCO)
-                        show_unidades_popup = False
-                    elif popup_brazas_option_rect.collidepoint(evento.pos):
-                        current_unit = "BRAZAS"
-                        try:
-                            default_range_value_brazas = 150 
-                            current_range_index = RANGE_PRESETS_BRAZAS.index(default_range_value_brazas)
-                        except ValueError:
-                            current_range_index = 4 
-                        active_sonar_rose_unit_surface = font.render(sonar_rose_unit_text_map[current_unit], True, BLANCO)
-                        show_unidades_popup = False
-                    elif not popup_main_rect.collidepoint(evento.pos) and not button_unidades_rect.collidepoint(evento.pos): 
-                        show_unidades_popup = False
-                
-                elif show_puerto_popup: # Puerto Pop-up is showing
-                    if puerto_popup_apply_button_rect.collidepoint(evento.pos):
-                        if ser:
-                            try:
-                                ser.close()
-                            except Exception as e:
-                                print(f"Error closing previous serial port: {e}")
-                        ser = None 
-                        serial_port_available = False
-                        puerto_popup_message = "Aplicando..." 
+            if evento.type == pygame.KEYDOWN:
+                if current_range_index >= len(range_presets_map[current_unit]):
+                    current_range_index = len(range_presets_map[current_unit]) - 1
+                s_max_for_event = range_presets_map[current_unit][current_range_index]
 
-                        if selected_com_port_in_popup and selected_baud_rate_in_popup:
-                            try:
-                                temp_ser = serial.Serial(selected_com_port_in_popup, selected_baud_rate_in_popup, timeout=1)
-                                ser = temp_ser 
-                                puerto = selected_com_port_in_popup 
-                                baudios = selected_baud_rate_in_popup 
-                                serial_port_available = True
-                                puerto_popup_message = f"Conectado a {puerto}@{baudios}"
-                            except serial.SerialException as e:
-                                print(f"Error opening serial port {selected_com_port_in_popup}: {e}")
-                                puerto_popup_message = f"Error: {e}"
-                                ser = None
-                                serial_port_available = False
-                            except Exception as e: 
-                                print(f"Unexpected error connecting to {selected_com_port_in_popup}: {e}")
-                                puerto_popup_message = f"Error inesperado: {e}"
-                                ser = None
-                                serial_port_available = False
-                        else:
-                            puerto_popup_message = "Seleccione puerto y baudios"
-                        
-                        puerto_popup_auto_close_start_time = pygame.time.get_ticks() 
+                handle_key_events(evento.key,
+                                  circle_center_x, circle_center_y,
+                                  display_radius_pixels, s_max_for_event)
 
-                    elif puerto_popup_cancel_button_rect.collidepoint(evento.pos):
-                        show_puerto_popup = False
-                        show_com_port_dropdown = False
-                        show_baud_rate_dropdown = False
-                    elif puerto_popup_select_port_rect.collidepoint(evento.pos):
-                        show_com_port_dropdown = not show_com_port_dropdown
-                        show_baud_rate_dropdown = False 
-                    elif puerto_popup_select_baud_rect.collidepoint(evento.pos):
-                        show_baud_rate_dropdown = not show_baud_rate_dropdown
-                        show_com_port_dropdown = False 
-                    else:
-                        clicked_outside_active_elements = True
-                        if show_com_port_dropdown:
-                            for i, item_rect in enumerate(puerto_popup_port_list_item_rects):
-                                if item_rect.collidepoint(evento.pos):
-                                    selected_com_port_in_popup = available_com_ports_list[i]
-                                    show_com_port_dropdown = False
-                                    clicked_outside_active_elements = False
-                                    break
-                            if not puerto_popup_select_port_rect.collidepoint(evento.pos) and clicked_outside_active_elements:
-                                show_com_port_dropdown = False 
-                                if not puerto_popup_main_rect.collidepoint(evento.pos):
-                                   show_puerto_popup = False
-
-
-                        if show_baud_rate_dropdown: 
-                            for i, item_rect in enumerate(puerto_popup_baud_list_item_rects):
-                                if item_rect.collidepoint(evento.pos):
-                                    selected_baud_rate_in_popup = available_baud_rates_list[i]
-                                    show_baud_rate_dropdown = False
-                                    clicked_outside_active_elements = False
-                                    break
-                            if not puerto_popup_select_baud_rect.collidepoint(evento.pos) and clicked_outside_active_elements:
-                                show_baud_rate_dropdown = False
-                                if not puerto_popup_main_rect.collidepoint(evento.pos):
-                                   show_puerto_popup = False
-                        
-                        if clicked_outside_active_elements and \
-                           not puerto_popup_main_rect.collidepoint(evento.pos) and \
-                           not button_puerto_rect.collidepoint(evento.pos): 
-                            show_puerto_popup = False
-                            show_com_port_dropdown = False
-                            show_baud_rate_dropdown = False
-                # --- End Puerto Pop-up Event Handling --- (This comment was slightly misplaced, fixed)
+            if evento.type == pygame.MOUSEBUTTONDOWN:
+                # Aquí iría la lógica de clic del ratón para la pantalla principal (ej. añadir marcadores)
+                pass
 
 
     # Read from serial port if available
@@ -3169,6 +3477,7 @@ while not hecho:
 
     # --- Marker 'Screen' to 'Geo' Conversion on NMEA Activation ---
     # This logic needs to run *after* a potential auto-reconnect might make serial_port_available True
+    effective_heading = (current_ship_heading + menu.options.get('ajuste_proa', 0)) % 360
     if serial_port_available and not prev_serial_port_available and \
        current_ship_lat_deg is not None and current_ship_lon_deg is not None:
         # NMEA data just became available with a valid fix (either by manual or auto-reconnect)
@@ -3181,7 +3490,7 @@ while not hecho:
                 screen_bearing_deg = math.degrees(marker['screen_bearing_rad'])
                 # true_marker_bearing_deg is relative to true North
                 # current_ship_heading is true heading. screen_bearing_deg is relative to ship's current screen up.
-                true_marker_bearing_deg = (current_ship_heading + screen_bearing_deg + 360) % 360
+                true_marker_bearing_deg = (effective_heading + screen_bearing_deg + 360) % 360
                 
                 distance_m = marker['initial_distance_meters'] # Already in meters
                 
@@ -3223,7 +3532,10 @@ while not hecho:
     prev_serial_port_available = serial_port_available
 
     # Limpia la pantalla y establece su color de fondo
-    pantalla.fill(current_colors["BACKGROUND"])
+    brightness_factor = menu.options.get('iluminacion', 5) / 10.0
+    bg_color_base = current_colors["BACKGROUND"]
+    bg_color_adjusted = tuple(max(0, min(255, int(c * brightness_factor))) for c in bg_color_base)
+    pantalla.fill(bg_color_adjusted)
 
 
     # Usar las variables calculadas dinámicamente para el círculo del sonar
@@ -3276,7 +3588,7 @@ while not hecho:
     draw_center_icon(pantalla, center_x, center_y, 36, current_colors["CENTER_ICON"]) # Changed height to 36, thickness remains 5
 
     # --- Dibujar Eco del Cardumen (MOVIDO ANTES DE ELEMENTOS DE UI SUPERPUESTOS) ---
-    if menu_options_values["transmision"] == "ON":
+    if menu.options.get("transmision") == "ON":
         if 'info_interseccion_cardumen' in locals() and info_interseccion_cardumen:
             dibujar_eco_cardumen(
                 pantalla,
@@ -3321,24 +3633,25 @@ while not hecho:
     pygame.draw.rect(pantalla, current_colors["DATA_PANEL_BORDER"], unified_data_box_dims, 2)
 
  # Slot 1: VELOCIDAD
-    text_surface_longitud = font.render(texto_longitud, True, current_colors["PRIMARY_TEXT"]) # texto_longitud is "VELOC DEL BARCO"
-    text_rect_longitud = text_surface_longitud.get_rect()
-    text_rect_longitud.left = unified_data_box_dims[0] + 5 
-    text_rect_longitud.top = unified_data_box_dims[1] + 5 
-    screen.blit(text_surface_longitud, text_rect_longitud)
+    if menu.options.get('mensaje_veloc') == 'ON':
+        text_surface_longitud = font.render(texto_longitud, True, current_colors["PRIMARY_TEXT"]) # texto_longitud is "VELOC DEL BARCO"
+        text_rect_longitud = text_surface_longitud.get_rect()
+        text_rect_longitud.left = unified_data_box_dims[0] + 5
+        text_rect_longitud.top = unified_data_box_dims[1] + 5
+        screen.blit(text_surface_longitud, text_rect_longitud)
 
-    if speed_str == "N/A":
-        display_speed_text = "N/A"
-    else:
-        # Assuming speed_str is like "X.X Knots" or just "X.X" if NMEA is different
-        numeric_part_speed = speed_str.replace(" Knots", "").strip()
-        display_speed_text = f"{numeric_part_speed} kn"
+        if speed_str == "N/A":
+            display_speed_text = "N/A"
+        else:
+            # Assuming speed_str is like "X.X Knots" or just "X.X" if NMEA is different
+            numeric_part_speed = speed_str.replace(" Knots", "").strip()
+            display_speed_text = f"{numeric_part_speed} kn"
 
-    text_surface_speed_data = font_size_54.render(display_speed_text, True, current_colors["PRIMARY_TEXT"]) # Changed to font_size_54
-    text_rect_speed_data = text_surface_speed_data.get_rect()
-    text_rect_speed_data.right = unified_data_box_dims[0] + unified_data_box_dims[2] - 5
-    text_rect_speed_data.bottom = unified_data_box_dims[1] + 100 - 8 
-    screen.blit(text_surface_speed_data, text_rect_speed_data)
+        text_surface_speed_data = font_size_54.render(display_speed_text, True, current_colors["PRIMARY_TEXT"]) # Changed to font_size_54
+        text_rect_speed_data = text_surface_speed_data.get_rect()
+        text_rect_speed_data.right = unified_data_box_dims[0] + unified_data_box_dims[2] - 5
+        text_rect_speed_data.bottom = unified_data_box_dims[1] + 100 - 8
+        screen.blit(text_surface_speed_data, text_rect_speed_data)
 
     # Slot 2: RUMBO
     y_offset_rumbo = unified_data_box_dims[1] + 100 + 5 # Start of RUMBO's 100px section + 5px padding from VELOCIDAD section
@@ -3408,136 +3721,9 @@ while not hecho:
     screen.blit(text_surface_lat_data, text_rect_lat_data)
     screen.blit(text_surface_lon_data, text_rect_lon_data)
 
-    # # Slot 4: DATO NUEVO 1 - HORA / FECHA
-    # # Content from the original combined_data_box_dims starts after the first three slots.
-    # # Height of first 3 slots: speed (100), course (100), latlon (140, approx from y_offset_latlon to its content bottom)
-    # # display_box_1_dims height was 340.
-    # section2_start_y = unified_data_box_dims[1] + 340 + 10 # unified_data_box_dims[1] is 10. 10 + 340 + 10 = 360.
+    # --- OLD DATA PANEL DRAWING REMOVED ---
 
-    # text_surface_db2_title = font.render(texto_dato_nuevo_1, True, current_colors["PRIMARY_TEXT"]) 
-    # text_rect_db2_title = text_surface_db2_title.get_rect()
-    # text_rect_db2_title.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
-    # text_rect_db2_title.top = section2_start_y + 5
-    # screen.blit(text_surface_db2_title, text_rect_db2_title)
-
-    # text_surface_zda_time = font_data_medium.render(zda_time_str, True, current_colors["PRIMARY_TEXT"]) 
-    # text_rect_zda_time = text_surface_zda_time.get_rect()
-    # text_rect_zda_time.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
-    # text_rect_zda_time.top = text_rect_db2_title.bottom + 3 
-    # screen.blit(text_surface_zda_time, text_rect_zda_time)
-
-    # text_surface_zda_date = font_data_medium.render(zda_date_str, True, current_colors["PRIMARY_TEXT"]) 
-    # text_rect_zda_date = text_surface_zda_date.get_rect()
-    # text_rect_zda_date.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
-    # text_rect_zda_date.top = text_rect_zda_time.bottom + 3 
-    # screen.blit(text_surface_zda_date, text_rect_zda_date)
-
-    # # Slot 5: DATO NUEVO 3 - PITCH / ROLL (Moved up)
-    # y_start_pitch_roll = text_rect_zda_date.bottom + 18 # Start after HORA/FECHA (relative positioning)
-
-    # text_surface_db4_title = font.render(texto_dato_nuevo_3, True, current_colors["PRIMARY_TEXT"]) 
-    # text_rect_db4_title = text_surface_db4_title.get_rect()
-    # text_rect_db4_title.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
-    # text_rect_db4_title.top = y_start_pitch_roll
-    # screen.blit(text_surface_db4_title, text_rect_db4_title)
-
-    # text_surface_att_pitch = font_data_medium.render(att_pitch_str, True, current_colors["PRIMARY_TEXT"]) 
-    # text_rect_att_pitch = text_surface_att_pitch.get_rect()
-    # text_rect_att_pitch.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
-    # text_rect_att_pitch.top = text_rect_db4_title.bottom + 3 
-    # screen.blit(text_surface_att_pitch, text_rect_att_pitch)
-
-    # text_surface_att_roll = font_data_medium.render(att_roll_str, True, current_colors["PRIMARY_TEXT"]) 
-    # text_rect_att_roll = text_surface_att_roll.get_rect()
-    # text_rect_att_roll.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
-    # text_rect_att_roll.top = text_rect_att_pitch.bottom + 3 
-    # screen.blit(text_surface_att_roll, text_rect_att_roll)
-    
-    # Slot 6: DATO NUEVO 2 - RATE OF TURN -- REMOVED
-    # text_surface_db3_title = font.render(texto_dato_nuevo_2, True, current_colors["PRIMARY_TEXT"]) # texto_dato_nuevo_2 is removed
-    # text_rect_db3_title = text_surface_db3_title.get_rect()
-    # text_rect_db3_title.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
-    # text_rect_db3_title.top = text_rect_att_roll.bottom + 18 
-    # screen.blit(text_surface_db3_title, text_rect_db3_title)
-
-    # text_surface_rot_data = font_data_medium.render(rot_str, True, BLANCO) # rot_str is removed
-    # text_rect_rot_data = text_surface_rot_data.get_rect()
-    # text_rect_rot_data.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2
-    # text_rect_rot_data.top = text_rect_db3_title.bottom + 3
-    # screen.blit(text_surface_rot_data, text_rect_rot_data)
-
-
-    # --- Draw "UNIDADES" and "PUERTO" Buttons ---
-    # Positioned below PITCH / ROLL data
-    box_internal_padding = 15 # Define padding for items within the unified box for these buttons
-    button_internal_padding_y = 5 # Padding inside the button text (height)
-    # Note: button_internal_padding_x is not explicitly used for width calculation here,
-    # as button width is derived from available space. Text is centered.
-    
-    # Calculate available width for two buttons side-by-side
-    total_available_width_for_buttons = unified_data_box_dims[2] - (box_internal_padding * 2) 
-    gap_between_main_buttons = 10
-    button_width = (total_available_width_for_buttons - gap_between_main_buttons) // 2
-
-    # UNIDADES Button
-    # Re-render surface if None (e.g., after color change)
-    if button_unidades_text_surface is None:
-        button_unidades_text_surface = font.render("UNIDADES", True, current_colors["PRIMARY_TEXT"], current_colors["BUTTON_BG"])
-
-    button_unidades_rect.width = button_width
-    button_unidades_rect.height = button_unidades_text_surface.get_height() + (2 * button_internal_padding_y)
-    button_unidades_rect.left = unified_data_box_dims[0] + box_internal_padding 
-    button_unidades_rect.top = text_rect_lon_data.bottom + 15
-
-    if not show_unidades_popup and not show_puerto_popup: # Hide if either popup is active over this area
-        pygame.draw.rect(pantalla, current_colors["BUTTON_BG"], button_unidades_rect) 
-        pygame.draw.rect(pantalla, current_colors["BUTTON_BORDER"], button_unidades_rect, 2) 
-        text_blit_rect_unidades = button_unidades_text_surface.get_rect(center=button_unidades_rect.center)
-        pantalla.blit(button_unidades_text_surface, text_blit_rect_unidades)
-
-    # PUERTO Button
-    if button_puerto_text_surface is None:
-        button_puerto_text_surface = font.render("PUERTO", True, current_colors["PRIMARY_TEXT"], current_colors["BUTTON_BG"])
-
-    button_puerto_rect.width = button_width
-    button_puerto_rect.height = button_puerto_text_surface.get_height() + (2 * button_internal_padding_y)
-    button_puerto_rect.left = button_unidades_rect.right + gap_between_main_buttons
-    button_puerto_rect.top = button_unidades_rect.top # Align top with Unidades button
-
-    if not show_puerto_popup and not show_unidades_popup: # Hide if either popup is active
-        pygame.draw.rect(pantalla, current_colors["BUTTON_BG"], button_puerto_rect)
-        pygame.draw.rect(pantalla, current_colors["BUTTON_BORDER"], button_puerto_rect, 1) 
-        text_blit_rect_puerto = button_puerto_text_surface.get_rect(center=button_puerto_rect.center)
-        pantalla.blit(button_puerto_text_surface, text_blit_rect_puerto)
-    
-    # --- Draw "MENÚ" Button ---
-    if button_menu_text_surface is None:
-        button_menu_text_surface = font.render("MENÚ", True, current_colors["PRIMARY_TEXT"], current_colors["BUTTON_BG"])
-
-    # Positioned in the top-right corner of the screen.
-    menu_button_padding_x = 10
-    menu_button_padding_y = 5 
-    
-    button_menu_rect.width = button_menu_text_surface.get_width() + (2 * menu_button_padding_x)
-    button_menu_rect.height = button_menu_text_surface.get_height() + (2 * menu_button_padding_y)
-    # Asegurar que el botón de menú esté a la derecha del panel de datos si hay espacio,
-    # o en el borde de la pantalla si el panel de datos es muy ancho.
-    button_menu_rect.right = unified_data_box_dims[0] - 10 # A la izquierda del panel de datos
-    if button_menu_rect.left < circle_origin_x + circle_width + 10: # Si invade el área del sonar
-        button_menu_rect.right = dimensiones[0] - 10 # Pegado al borde derecho de la pantalla
-    button_menu_rect.top = 10
-
-    # Draw MENÚ button only if no other popups are obscuring its general area
-    # (This simple check might need refinement if popups overlap precisely)
-    if not show_puerto_popup and not show_unidades_popup: # and not show_main_menu_popup (if it shouldn't be drawn when open)
-        pygame.draw.rect(pantalla, current_colors["BUTTON_BG"], button_menu_rect)
-        pygame.draw.rect(pantalla, current_colors["BUTTON_BORDER"], button_menu_rect, 1)
-        text_blit_rect_menu = button_menu_text_surface.get_rect(center=button_menu_rect.center)
-        pantalla.blit(button_menu_text_surface, text_blit_rect_menu)
-    # --- End Draw "MENÚ" Button ---
-
-    # --- End Draw Main Buttons ---
-
+    # --- OLD BUTTON DRAWING REMOVED ---
 
     # --- Display Current Range ---
     active_presets = range_presets_map[current_unit]
@@ -3583,106 +3769,107 @@ while not hecho:
     pantalla.blit(gain_surface, gain_rect)
     # --- End Display Current Gain ---
 
-    # --- Display Calculated Cursor Data (Top-Left, dentro del círculo del sonar si es posible) ---
-    unit_suffix_for_display = sonar_rose_unit_text_map[current_unit] 
+    if menu.options.get('indi_subtexto') == 'ON':
+        # --- Display Calculated Cursor Data (Top-Left, dentro del círculo del sonar si es posible) ---
+        unit_suffix_for_display = sonar_rose_unit_text_map[current_unit]
+        
+        # line1_text = f"H: {ui_state['cursor_H_proj_display']}{unit_suffix_for_display}" # No longer used directly
+        # line2_text = f"S: {ui_state['cursor_S_range_display']}{unit_suffix_for_display} ⭢" # No longer used directly
+        # line3_text = f"D: {ui_state['cursor_Depth_display']}{unit_suffix_for_display}" # Original full string for value - No longer used directly
+        # line4_text_val = f"{ui_state['cursor_bearing_display']}°" # Original full string for value - No longer used directly
     
-    # line1_text = f"H: {ui_state['cursor_H_proj_display']}{unit_suffix_for_display}" # No longer used directly
-    # line2_text = f"S: {ui_state['cursor_S_range_display']}{unit_suffix_for_display} ⭢" # No longer used directly
-    # line3_text = f"D: {ui_state['cursor_Depth_display']}{unit_suffix_for_display}" # Original full string for value - No longer used directly
-    # line4_text_val = f"{ui_state['cursor_bearing_display']}°" # Original full string for value - No longer used directly
-
-    # Data for cursor display: (Label, value_string_getter_or_value, suffix_for_label)
-    cursor_info_lines = [
-        ("⬊", f" {ui_state['cursor_S_range_display']}", ""), # S (was H)
-        ("⮕", f" {ui_state['cursor_H_proj_display']}", ""), # H (was S)
-        ("⭣", f" {ui_state['cursor_Depth_display']}", ""), 
-        ("B", f" {ui_state['cursor_bearing_display']}°", "")
-    ]
-
-    current_cursor_y_offset = circle_origin_y + 10 # Start inside the sonar circle
-    label_value_spacing = 2 
-    cursor_info_left_margin = circle_origin_x + 10
-
-    for label_str, value_str, label_suffix_str in cursor_info_lines:
-        label_full_str = label_str + label_suffix_str
-        
-        current_label_font = font_large
-        if label_str == "B":
-            current_label_font = font 
-            
-        label_surf = current_label_font.render(label_full_str, True, current_colors["PRIMARY_TEXT"])
-        value_surf = font.render(value_str, True, current_colors["PRIMARY_TEXT"]) 
-
-        label_rect = label_surf.get_rect(topleft=(cursor_info_left_margin, current_cursor_y_offset))
-        value_rect = value_surf.get_rect(left=label_rect.right + label_value_spacing, centery=label_rect.centery)
-        
-        # Ensure it doesn't go out of the sonar circle bounds (approx)
-        if value_rect.right < circle_origin_x + circle_width - 10 and label_rect.bottom < circle_origin_y + circle_height -10:
-            pantalla.blit(label_surf, label_rect)
-            pantalla.blit(value_surf, value_rect)
-        
-        current_cursor_y_offset = label_rect.bottom + 3
-    # --- End Display Calculated Cursor Data ---
-
-    # --- Display Calculated Target Data (Bottom-Right inside Sonar Rose) ---
-    large_symbol_font = font_large 
-    label_font = font 
-    
-    if len(target_markers) >= 2:
-        effective_line_height = large_symbol_font.get_linesize() 
-        
-        margin_bottom_sonar_circle = 10 
-        symbol_value_spacing = 2
-
-        target_data_lines_info = [
-            ("⬌", f" {ui_state['target_dist_t1_t2']}", True),
-            ("⮕", f" {ui_state['target_dist_center_t2']}", True),
-            ("⭣", f" {ui_state['target_depth_t2']}", True),
-            ("S", f" {ui_state['target_speed_t1_t2']}", False), 
-            ("C", f" {ui_state['target_course_t1_t2']}", False)
+        # Data for cursor display: (Label, value_string_getter_or_value, suffix_for_label)
+        cursor_info_lines = [
+            ("⬊", f" {ui_state['cursor_S_range_display']}", ""), # S (was H)
+            ("⮕", f" {ui_state['cursor_H_proj_display']}", ""), # H (was S)
+            ("⭣", f" {ui_state['cursor_Depth_display']}", ""),
+            ("B", f" {ui_state['cursor_bearing_display']}°", "")
         ]
 
-        # Calculate total height to position the block from the bottom of the sonar circle
-        num_lines_target_data = len(target_data_lines_info)
-        total_text_block_height = (num_lines_target_data * effective_line_height) + \
-                                    ((num_lines_target_data - 1) * 3 if num_lines_target_data > 0 else 0)
+        current_cursor_y_offset = circle_origin_y + 10 # Start inside the sonar circle
+        label_value_spacing = 2
+        cursor_info_left_margin = circle_origin_x + 10
 
-        start_y_for_target_block = (circle_origin_y + circle_height) - total_text_block_height - margin_bottom_sonar_circle
+        for label_str, value_str, label_suffix_str in cursor_info_lines:
+            label_full_str = label_str + label_suffix_str
+
+            current_label_font = font_large
+            if label_str == "B":
+                current_label_font = font
+
+            label_surf = current_label_font.render(label_full_str, True, current_colors["PRIMARY_TEXT"])
+            value_surf = font.render(value_str, True, current_colors["PRIMARY_TEXT"])
+
+            label_rect = label_surf.get_rect(topleft=(cursor_info_left_margin, current_cursor_y_offset))
+            value_rect = value_surf.get_rect(left=label_rect.right + label_value_spacing, centery=label_rect.centery)
+
+            # Ensure it doesn't go out of the sonar circle bounds (approx)
+            if value_rect.right < circle_origin_x + circle_width - 10 and label_rect.bottom < circle_origin_y + circle_height -10:
+                pantalla.blit(label_surf, label_rect)
+                pantalla.blit(value_surf, value_rect)
+
+            current_cursor_y_offset = label_rect.bottom + 3
+        # --- End Display Calculated Cursor Data ---
+
+        # --- Display Calculated Target Data (Bottom-Right inside Sonar Rose) ---
+        large_symbol_font = font_large
+        label_font = font
         
-        current_y_offset_target_data = start_y_for_target_block
-
-        # Calculate the maximum width of the rendered lines to ensure right-alignment
-        max_line_width = 0
-        rendered_lines = []
-        for label_str, value_str, is_special in target_data_lines_info:
-            font_for_label = large_symbol_font if is_special else label_font
-            label_surf = font_for_label.render(label_str, True, current_colors["PRIMARY_TEXT"])
-            value_surf = label_font.render(value_str, True, current_colors["PRIMARY_TEXT"])
-            line_width = label_surf.get_width() + symbol_value_spacing + value_surf.get_width()
-            if line_width > max_line_width:
-                max_line_width = line_width
-            rendered_lines.append({'label_surf': label_surf, 'value_surf': value_surf, 'is_special': is_special})
-        
-        # --- AHORA LA PARTE MODIFICADA: POSICIONAR EL BLOQUE RESPECTO AL PANEL DE DATOS ---
-        margin_right_to_data_panel = 10
-        right_x_for_target_block = unified_data_box_dims[0] - margin_right_to_data_panel
-
-        for i, line_info in enumerate(rendered_lines):
-            label_surf = line_info['label_surf']
-            value_surf = line_info['value_surf']
+        if len(target_markers) >= 2:
+            effective_line_height = large_symbol_font.get_linesize()
             
-            current_line_total_width = label_surf.get_width() + symbol_value_spacing + value_surf.get_width()
-            current_start_x_for_line = right_x_for_target_block - current_line_total_width
-            
-            y_pos_for_this_line = current_y_offset_target_data + (i * (effective_line_height + 3))
+            margin_bottom_sonar_circle = 10
+            symbol_value_spacing = 2
 
-            label_rect = label_surf.get_rect(topleft=(current_start_x_for_line, y_pos_for_this_line))
-            value_rect = value_surf.get_rect(left=label_rect.right + symbol_value_spacing, centery=label_rect.centery)
-            
-            pantalla.blit(label_surf, label_rect)
-            pantalla.blit(value_surf, value_rect)
+            target_data_lines_info = [
+                ("⬌", f" {ui_state['target_dist_t1_t2']}", True),
+                ("⮕", f" {ui_state['target_dist_center_t2']}", True),
+                ("⭣", f" {ui_state['target_depth_t2']}", True),
+                ("S", f" {ui_state['target_speed_t1_t2']}", False),
+                ("C", f" {ui_state['target_course_t1_t2']}", False)
+            ]
 
-    # --- End Display Calculated Target Data ---
+            # Calculate total height to position the block from the bottom of the sonar circle
+            num_lines_target_data = len(target_data_lines_info)
+            total_text_block_height = (num_lines_target_data * effective_line_height) + \
+                                        ((num_lines_target_data - 1) * 3 if num_lines_target_data > 0 else 0)
+
+            start_y_for_target_block = (circle_origin_y + circle_height) - total_text_block_height - margin_bottom_sonar_circle
+            
+            current_y_offset_target_data = start_y_for_target_block
+
+            # Calculate the maximum width of the rendered lines to ensure right-alignment
+            max_line_width = 0
+            rendered_lines = []
+            for label_str, value_str, is_special in target_data_lines_info:
+                font_for_label = large_symbol_font if is_special else label_font
+                label_surf = font_for_label.render(label_str, True, current_colors["PRIMARY_TEXT"])
+                value_surf = label_font.render(value_str, True, current_colors["PRIMARY_TEXT"])
+                line_width = label_surf.get_width() + symbol_value_spacing + value_surf.get_width()
+                if line_width > max_line_width:
+                    max_line_width = line_width
+                rendered_lines.append({'label_surf': label_surf, 'value_surf': value_surf, 'is_special': is_special})
+            
+            # --- AHORA LA PARTE MODIFICADA: POSICIONAR EL BLOQUE RESPECTO AL PANEL DE DATOS ---
+            margin_right_to_data_panel = 10
+            right_x_for_target_block = unified_data_box_dims[0] - margin_right_to_data_panel
+
+            for i, line_info in enumerate(rendered_lines):
+                label_surf = line_info['label_surf']
+                value_surf = line_info['value_surf']
+
+                current_line_total_width = label_surf.get_width() + symbol_value_spacing + value_surf.get_width()
+                current_start_x_for_line = right_x_for_target_block - current_line_total_width
+
+                y_pos_for_this_line = current_y_offset_target_data + (i * (effective_line_height + 3))
+
+                label_rect = label_surf.get_rect(topleft=(current_start_x_for_line, y_pos_for_this_line))
+                value_rect = value_surf.get_rect(left=label_rect.right + symbol_value_spacing, centery=label_rect.centery)
+
+                pantalla.blit(label_surf, label_rect)
+                pantalla.blit(value_surf, value_rect)
+
+        # --- End Display Calculated Target Data ---
 
 
     # --- Draw Custom "+" Cursor ---
@@ -3923,363 +4110,10 @@ while not hecho:
             show_gain_temporarily = False
     # --- End Temporary Gain Display ---
 
-    # --- Draw Pop-up Window (if active) ---
-    if show_unidades_popup:
-        popup_width = 200
-        popup_height = 100 
-        popup_main_rect.width = popup_width
-        popup_main_rect.height = popup_height
-        
-        popup_main_rect.centerx = unified_data_box_dims[0] + unified_data_box_dims[2] // 2 # Use unified box
-        # Position below the UNIDADES button's usual spot or related content
-        # The UNIDADES button's top is text_rect_att_roll.bottom + 15.
-        # This positioning keeps the popup starting at roughly the same vertical area as the buttons.
-        if 'text_rect_att_roll' in locals() and text_rect_att_roll is not None: 
-              popup_main_rect.top = text_rect_att_roll.bottom + 15 
-        else: # Fallback if text_rect_att_roll somehow not defined
-            # This fallback might need adjustment if text_rect_att_roll is critical for Y
-            # A better fallback might be relative to where the buttons are drawn.
-            # For now, keeping centery as a last resort.
-            popup_main_rect.centery = pantalla.get_rect().centery 
-
-        # Use GRIS_MEDIO for popup background, BLANCO for border (consistent across themes for now)
-        pygame.draw.rect(pantalla, GRIS_MEDIO, popup_main_rect) 
-        pygame.draw.rect(pantalla, BLANCO, popup_main_rect, 2)  
-
-        button_height = 30 
-        button_width = popup_width - 40 
-        top_margin = 10 
-        padding_between_buttons = 5 
-
-        # Re-render text surfaces for popup if they are None (e.g. after color change)
-        if popup_metros_text_surface is None:
-            popup_metros_text_surface = font.render("METROS", True, BLANCO, NEGRO) # Popup buttons keep BLANCO/NEGRO
-        if popup_brazas_text_surface is None:
-            popup_brazas_text_surface = font.render("BRAZAS", True, BLANCO, NEGRO)
-
-
-        popup_metros_option_rect.width = button_width
-        popup_metros_option_rect.height = button_height
-        popup_metros_option_rect.centerx = popup_main_rect.centerx
-        popup_metros_option_rect.top = popup_main_rect.top + top_margin
-
-        pygame.draw.rect(pantalla, NEGRO, popup_metros_option_rect) 
-        pygame.draw.rect(pantalla, BLANCO, popup_metros_option_rect, 1) 
-        metros_text_blit_rect = popup_metros_text_surface.get_rect(center=popup_metros_option_rect.center)
-        pantalla.blit(popup_metros_text_surface, metros_text_blit_rect)
-
-        popup_brazas_option_rect.width = button_width
-        popup_brazas_option_rect.height = button_height
-        popup_brazas_option_rect.centerx = popup_main_rect.centerx
-        popup_brazas_option_rect.top = popup_metros_option_rect.bottom + padding_between_buttons
-
-        pygame.draw.rect(pantalla, NEGRO, popup_brazas_option_rect) 
-        pygame.draw.rect(pantalla, BLANCO, popup_brazas_option_rect, 1) 
-        brazas_text_blit_rect = popup_brazas_text_surface.get_rect(center=popup_brazas_option_rect.center)
-        pantalla.blit(popup_brazas_text_surface, brazas_text_blit_rect)
-    # --- End Draw Pop-up Window ---
-
-    # --- Draw "Puerto" Pop-up Window (if active) ---
-    if show_puerto_popup:
-        # Re-render surfaces for Puerto popup if they are None
-        if puerto_popup_title_surf is None:
-            puerto_popup_title_surf = font_large.render("Configurar Puerto", True, BLANCO) # Popup text BLANCO
-        if puerto_popup_com_label_surf is None:
-            puerto_popup_com_label_surf = font.render("Puerto COM:", True, BLANCO)
-        if puerto_popup_baud_label_surf is None:
-            puerto_popup_baud_label_surf = font.render("Baudios:", True, BLANCO)
-        if puerto_popup_apply_text_surf is None:
-            puerto_popup_apply_text_surf = font.render("Aplicar", True, BLANCO, NEGRO) # Button text BLANCO/NEGRO
-        if puerto_popup_cancel_text_surf is None:
-            puerto_popup_cancel_text_surf = font.render("Cancelar", True, BLANCO, NEGRO)
-
-
-        # Define pop-up size and position
-        base_popup_width = 350  # Desired width for content
-        popup_height = 280      # Fixed height
-        
-        # Position the pop-up to align with the start of the second section of content
-        # in the new unified_data_box.
-        # section2_start_y was defined earlier as: unified_data_box_dims[1] + 340 + 10
-        # Ensure section2_start_y is accessible or recalculate if necessary.
-        # text_rect_db2_title.top = section2_start_y + 5
-        # So, section2_start_y = text_rect_db2_title.top - 5 (if text_rect_db2_title is already set)
-        # This assumes text_rect_db2_title is defined before this popup drawing logic. It is.
-        
-        popup_x = unified_data_box_dims[0]
-        if 'text_rect_db2_title' in locals() and text_rect_db2_title is not None:
-            popup_y = text_rect_db2_title.top - 5 # Align with the start of HORA/FECHA block
-        else: # Fallback if text_rect_db2_title not yet defined (should not happen in normal flow)
-            popup_y = unified_data_box_dims[1] + 340 + 10 # Recalculate section2_start_y
-
-        # Adjust width if it would go off-screen
-        max_allowed_width = pantalla.get_width() - popup_x - 5 # 5px margin from screen edge
-        actual_popup_width = min(base_popup_width, max_allowed_width)
-        actual_popup_width = max(actual_popup_width, 200) # Example minimum width
-
-        puerto_popup_main_rect.width = actual_popup_width
-        puerto_popup_main_rect.height = popup_height # Keep original desired height
-
-        # Adjust vertical position if it goes off bottom
-        if popup_y + puerto_popup_main_rect.height > pantalla.get_height() - 5: # 5px margin
-            popup_y = pantalla.get_height() - 5 - puerto_popup_main_rect.height
-        
-        puerto_popup_main_rect.topleft = (popup_x, popup_y)
-
-        # Use GRIS_MEDIO for popup background, BLANCO for border (consistent across themes for now)
-        pygame.draw.rect(pantalla, GRIS_MEDIO, puerto_popup_main_rect) 
-        pygame.draw.rect(pantalla, BLANCO, puerto_popup_main_rect, 2)  
-
-        title_rect = puerto_popup_title_surf.get_rect(centerx=puerto_popup_main_rect.centerx, top=puerto_popup_main_rect.top + 10)
-        pantalla.blit(puerto_popup_title_surf, title_rect) # Text color is BLANCO from re-render
-
-        current_y_offset_puerto = title_rect.bottom + 15 # Renamed to avoid conflict
-        popup_internal_padding_x = 15 
-        dropdown_height = 25
-        dropdown_item_height = 20
- # COM Port Selection
-        pantalla.blit(puerto_popup_com_label_surf, (puerto_popup_main_rect.left + popup_internal_padding_x, current_y_offset_puerto)) # Text color BLANCO
-        puerto_popup_select_port_rect.topleft = (puerto_popup_main_rect.left + popup_internal_padding_x + puerto_popup_com_label_surf.get_width() + 10, current_y_offset_puerto -2)
-        puerto_popup_select_port_rect.width = puerto_popup_main_rect.width - (popup_internal_padding_x * 2) - puerto_popup_com_label_surf.get_width() - 10
-        puerto_popup_select_port_rect.height = dropdown_height
-        pygame.draw.rect(pantalla, NEGRO, puerto_popup_select_port_rect) # Dropdown box NEGRO/BLANCO
-        pygame.draw.rect(pantalla, BLANCO, puerto_popup_select_port_rect, 1)
-        port_display_text = selected_com_port_in_popup if selected_com_port_in_popup else "Seleccionar..."
-        port_display_surf = font.render(port_display_text, True, BLANCO) # Text in dropdown BLANCO
-        pantalla.blit(port_display_surf, port_display_surf.get_rect(centery=puerto_popup_select_port_rect.centery, left=puerto_popup_select_port_rect.left + 5))
-
-        current_y_offset_puerto += dropdown_height + 5 
-
-        if show_com_port_dropdown:
-            list_box_x = puerto_popup_select_port_rect.left
-            list_box_y = puerto_popup_select_port_rect.bottom + 2
-            list_box_width = puerto_popup_select_port_rect.width
-            max_dropdown_list_height = 100 
-            
-            puerto_popup_port_list_item_rects.clear()
-            temp_y_list_item = list_box_y
-            actual_list_height = min(len(available_com_ports_list) * dropdown_item_height, max_dropdown_list_height)
-            if not available_com_ports_list: actual_list_height = dropdown_item_height 
-            
-            pygame.draw.rect(pantalla, NEGRO, (list_box_x, list_box_y, list_box_width, actual_list_height)) # Dropdown list NEGRO/BLANCO
-            pygame.draw.rect(pantalla, BLANCO, (list_box_x, list_box_y, list_box_width, actual_list_height),1)
-
-            if not available_com_ports_list:
-                no_ports_surf = font.render("No hay puertos disponibles", True, GRIS_MEDIO) # GRIS_MEDIO for disabled text
-                pantalla.blit(no_ports_surf, no_ports_surf.get_rect(centerx=list_box_x + list_box_width // 2, top=temp_y_list_item + 2))
-            else:
-                for i, port_name in enumerate(available_com_ports_list):
-                    if temp_y_list_item + dropdown_item_height > list_box_y + max_dropdown_list_height:
-                        break 
-                    item_rect = pygame.Rect(list_box_x, temp_y_list_item, list_box_width, dropdown_item_height)
-                    puerto_popup_port_list_item_rects.append(item_rect)
-                    item_color = BLANCO # Default item color BLANCO
-                    if port_name == selected_com_port_in_popup: 
-                        item_color = VERDE # Selected item VERDE
-                    port_item_surf = font.render(port_name, True, item_color)
-                    pantalla.blit(port_item_surf, port_item_surf.get_rect(centery=item_rect.centery, left=item_rect.left + 5))
-                    temp_y_list_item += dropdown_item_height
-            current_y_offset_puerto = list_box_y + actual_list_height + 10 
-        else:
-             current_y_offset_puerto = puerto_popup_select_port_rect.bottom + 10
-
-
-        # Baud Rate Selection
-        pantalla.blit(puerto_popup_baud_label_surf, (puerto_popup_main_rect.left + popup_internal_padding_x, current_y_offset_puerto)) # Text color BLANCO
-        puerto_popup_select_baud_rect.topleft = (puerto_popup_main_rect.left + popup_internal_padding_x + puerto_popup_baud_label_surf.get_width() + 10, current_y_offset_puerto - 2)
-        puerto_popup_select_baud_rect.width = puerto_popup_main_rect.width - (popup_internal_padding_x * 2) - puerto_popup_baud_label_surf.get_width() - 10
-        puerto_popup_select_baud_rect.height = dropdown_height
-        pygame.draw.rect(pantalla, NEGRO, puerto_popup_select_baud_rect) # Dropdown box NEGRO/BLANCO
-        pygame.draw.rect(pantalla, BLANCO, puerto_popup_select_baud_rect, 1)
-        baud_display_surf = font.render(str(selected_baud_rate_in_popup), True, BLANCO) # Text in dropdown BLANCO
-        pantalla.blit(baud_display_surf, baud_display_surf.get_rect(centery=puerto_popup_select_baud_rect.centery, left=puerto_popup_select_baud_rect.left + 5))
-        
-        current_y_offset_puerto += dropdown_height + 5
-
-        if show_baud_rate_dropdown:
-            list_box_x = puerto_popup_select_baud_rect.left
-            list_box_y = puerto_popup_select_baud_rect.bottom + 2
-            list_box_width = puerto_popup_select_baud_rect.width
-            max_dropdown_list_height = 100 
-            
-            puerto_popup_baud_list_item_rects.clear()
-            temp_y_list_item = list_box_y
-            actual_list_height = min(len(available_baud_rates_list) * dropdown_item_height, max_dropdown_list_height)
-            pygame.draw.rect(pantalla, NEGRO, (list_box_x, list_box_y, list_box_width, actual_list_height)) # Dropdown list NEGRO/BLANCO
-            pygame.draw.rect(pantalla, BLANCO, (list_box_x, list_box_y, list_box_width, actual_list_height),1)
-
-            for i, baud_val in enumerate(available_baud_rates_list):
-                if temp_y_list_item + dropdown_item_height > list_box_y + max_dropdown_list_height:
-                    break 
-                item_rect = pygame.Rect(list_box_x, temp_y_list_item, list_box_width, dropdown_item_height)
-                puerto_popup_baud_list_item_rects.append(item_rect)
-                item_color = BLANCO # Default item color BLANCO
-                if baud_val == selected_baud_rate_in_popup: item_color = VERDE # Selected item VERDE
-                
-                baud_item_surf = font.render(str(baud_val), True, item_color)
-                pantalla.blit(baud_item_surf, baud_item_surf.get_rect(centery=item_rect.centery, left=item_rect.left + 5))
-                temp_y_list_item += dropdown_item_height
-            current_y_offset_puerto = list_box_y + actual_list_height + 10
-        else:
-            current_y_offset_puerto = puerto_popup_select_baud_rect.bottom + 10
-
-        # Status Message
-        if puerto_popup_message:
-            msg_surf = font.render(puerto_popup_message, True, BLANCO) # Message text BLANCO
-            msg_rect = msg_surf.get_rect(centerx=puerto_popup_main_rect.centerx, top=current_y_offset_puerto)
-            pantalla.blit(msg_surf, msg_rect)
-            current_y_offset_puerto = msg_rect.bottom + 10
-        
-        # Buttons (Apply, Cancel) 
-        button_width_puerto = 100 # Renamed to avoid conflict
-        button_height_puerto = 30 # Renamed
-        gap_between_buttons_puerto = 10 # Renamed
-        
-        puerto_popup_cancel_button_rect.width = button_width_puerto
-        puerto_popup_cancel_button_rect.height = button_height_puerto
-        puerto_popup_cancel_button_rect.bottom = puerto_popup_main_rect.bottom - popup_internal_padding_x 
-        puerto_popup_cancel_button_rect.right = puerto_popup_main_rect.centerx - (gap_between_buttons_puerto / 2)
-        pygame.draw.rect(pantalla, NEGRO, puerto_popup_cancel_button_rect) # Button BG NEGRO
-        pygame.draw.rect(pantalla, VERDE, puerto_popup_cancel_button_rect, 1) # Button Border VERDE
-        pantalla.blit(puerto_popup_cancel_text_surf, puerto_popup_cancel_text_surf.get_rect(center=puerto_popup_cancel_button_rect.center)) # Text BLANCO from re-render
-
-        puerto_popup_apply_button_rect.width = button_width_puerto
-        puerto_popup_apply_button_rect.height = button_height_puerto
-        puerto_popup_apply_button_rect.bottom = puerto_popup_main_rect.bottom - popup_internal_padding_x 
-        puerto_popup_apply_button_rect.left = puerto_popup_main_rect.centerx + (gap_between_buttons_puerto / 2)
-        pygame.draw.rect(pantalla, NEGRO, puerto_popup_apply_button_rect) # Button BG NEGRO
-        pygame.draw.rect(pantalla, VERDE, puerto_popup_apply_button_rect, 1) # Button Border VERDE
-        pantalla.blit(puerto_popup_apply_text_surf, puerto_popup_apply_text_surf.get_rect(center=puerto_popup_apply_button_rect.center)) # Text BLANCO from re-render
-    # --- End Draw "Puerto" Pop-up Window ---
-
-    # --- Draw Main Menu Pop-up Panel ---
-    if show_main_menu_popup:
-        menu_panel_width = 300  # Fixed width
-        menu_panel_margin_top = 10
-        menu_panel_margin_right = 10
-        menu_panel_internal_padding_top = 10 # Padding inside the panel, above title
-        menu_panel_internal_padding_bottom = 15 # Padding inside the panel, below last item
-        spacing_between_items = 8 # Consistent spacing for height calculation
-        
-        _menu_item_row_h = font_menu_item.get_linesize() + 4 # Adjusted item height for new font
-        _base_dropdown_item_h = font_menu_item.get_linesize() + 2
-
-        # --- Calculate Content Height ---
-        _content_total_h = 0 
-        # No title, start with top padding for the first item
-        # _content_total_h += font_large.get_height() + 15 # title + its bottom padding (15 is from current_menu_y_offset = title_menu_rect.bottom + 15)
-        
-        _all_menu_items_config = [
-            ("dropdown", "potencia_tx", "POTENCIA TX:", range(1, 11), None),
-            ("dropdown", "long_impulso", "LONG IMPULSO:", range(1, 11), None),
-            ("dropdown", "ciclo_tx", "CICLO TX:", range(1, 11), None),
-            ("dropdown", "tvg_proximo", "TVG PROXIMO:", range(1, 11), None),
-            ("dropdown", "tvg_lejano", "TVG LEJANO:", range(1, 11), None),
-            ("dropdown", "cag", "CAG:", range(1, 11), None),
-            ("dropdown", "cag_2", "2° CAG:", range(1, 11), None),
-            ("dropdown", "limitar_ruido", "LIMITAR RUIDO:", range(1, 11), None),
-            ("square", "curva_color", "CURVA COLOR:", [str(i) for i in range(1, 5)], "ROJO"),
-            ("square", "respuesta_color", "RESPUESTA COLOR:", [str(i) for i in range(1, 5)], "ROJO"),
-            ("dropdown", "anular_color", "ANULAR COLOR:", range(1, 11), None),
-            ("dropdown", "promedio_eco", "PROMEDIO ECO:", range(1, 4), None),
-            ("dropdown", "rechazo_interf", "RECHAZO INTERF:", range(1, 4), None),
-            ("square", "angulo_haz_hor", "ANGULO HAZ HOR:", ["ANCHO", "ESTRECHO"], "ROJO"),
-            ("square", "angulo_haz_ver", "ANGULO HAZ VER:", ["ANCHO", "ESTRECHO"], "ROJO"),
-            ("square", "color_menu", "COLOR:", [str(i) for i in range(1, 5)], "VERDE_CLARO"),
-            # BORRAR MARCAS items are action buttons, not value states here
-            # ("dropdown", "nivel_alarma", "NIVEL ALARMA:", range(1,11), None), # REMOVED
-            # ("square", "explor_auto", "EXPLOR AUTO:", ["ON", "OFF"], "VERDE_CLARO"), # REMOVED
-            # ("dropdown", "sector_explor", "SECTOR EXPLOR:", ["±10°", "±20°", "±30°", "±60°", "±90°", "±170°"], None), # REMOVED
-            # ("square", "inclin_auto", "INCLIN AUTO:", ["ON", "OFF"], "VERDE_CLARO"), # REMOVED
-            # ("dropdown", "angulo_inclin", "ANGULO INCLIN:", ["±2-10°", "±2-20°", "±2-30°", "±2-40°", "±2-55°"], None), # REMOVED
-            ("square", "transmision", "TRANSMISION:", ["ON", "OFF"], "VERDE_CLARO"),
-            ("dropdown", "volumen_audio", "VOLUMEN AUDIO:", range(0, 11), None), # Changed range to 0-10
-        ]
-        
-        for item_config_type, _, _, _, _ in _all_menu_items_config:
-            _content_total_h += _menu_item_row_h + spacing_between_items
-        
-        # Subtract one spacing_between_items as the last item doesn't have spacing *after* it before bottom padding
-        if len(_all_menu_items_config) > 0: # if there's any content
-             _content_total_h -= spacing_between_items # remove last spacing if items exist
-
-
-        calculated_panel_height = menu_panel_internal_padding_top + _content_total_h + menu_panel_internal_padding_bottom
-        
-        menu_panel_rect = pygame.Rect(
-            dimensiones[0] - menu_panel_width - menu_panel_margin_right, # Right aligned
-            menu_panel_margin_top,
-            menu_panel_width,
-            min(calculated_panel_height, dimensiones[1] - menu_panel_margin_top - 10) # Max height, 10px margin bottom
-        )
-        # Ensure minimum height if calculated is too small or negative due to screen constraints
-        menu_panel_rect.height = max(menu_panel_rect.height, 50)
-
-        # Use GRIS_MEDIO for menu panel background, BLANCO for border (consistent for now)
-        pygame.draw.rect(pantalla, GRIS_MEDIO, menu_panel_rect) 
-        pygame.draw.rect(pantalla, BLANCO, menu_panel_rect, 2)   
-
-        # Title removed
-        
-      
-        global_menu_panel_rect = menu_panel_rect 
-
-        # --- Menu Content Drawing ---
-        current_menu_y_offset = menu_panel_rect.top + menu_panel_internal_padding_top 
-        menu_item_height = _menu_item_row_h 
-        menu_padding_x = 10
-        
-        interactive_menu_item_rects = {}
-        base_dropdown_item_height = _base_dropdown_item_h 
-        color_palette_map = {"NEGRO": NEGRO, "BLANCO": BLANCO} 
-        square_size_calc = int(font_menu_item.get_height() * 2.0) 
-        color_palette_map_sq = {"NEGRO": NEGRO, "BLANCO": BLANCO, "ROJO": ROJO, "VERDE_CLARO": VERDE_CLARO}
-
-        for item_type, key, label, item_source_or_labels, highlight_color_key in _all_menu_items_config:
-            current_value = menu_options_values[key]
-            occupied_h = 0
-
-            if item_type == "dropdown":
-                is_open = menu_dropdown_states[key]
-                drawn_elements, occupied_h = draw_single_dropdown_option(
-                    pantalla, key, label, current_value, is_open,
-                    current_menu_y_offset, menu_panel_rect, font_menu_item, 
-                    color_palette_map,
-                    menu_item_height, 
-                    base_dropdown_item_height, 
-                    item_source_or_labels 
-                )
-                interactive_menu_item_rects[key] = drawn_elements
-            elif item_type == "square":
-                item_values = item_source_or_labels 
-                drawn_sq_rects, occupied_h = draw_square_selector_option(
-                    pantalla, key, label, current_value, item_source_or_labels,
-                    current_menu_y_offset, menu_panel_rect, font_menu_item,
-                    color_palette_map_sq, menu_item_height, square_size_calc, 
-                    color_palette_map_sq[highlight_color_key]
-                )
-                interactive_menu_item_rects[key] = {'squares': drawn_sq_rects, 'values': item_values}
-            
-            current_menu_y_offset += occupied_h + spacing_between_items
-        
-        # --- ASIGNAR AJUSTE (Placeholder) - REMOVED ---
-        # asignar_label_text = "ASIGNAR AJUSTE:"
-        # asignar_label_surf = font_menu_item.render(asignar_label_text, True, BLANCO) 
-        # asignar_label_rect = asignar_label_surf.get_rect(topleft=(menu_panel_rect.left + menu_padding_x, current_menu_y_offset))
-        # pantalla.blit(asignar_label_surf, asignar_label_rect)
-        # current_menu_y_offset += asignar_label_surf.get_height() + spacing_between_items
-
-        # f_key_options = ["TECLA F1", "TECLA F2", "TECLA F3", "TECLA F4"] # REMOVED
-        # for f_key_text in f_key_options:
-            # f_key_surf = font_menu_item.render(f_key_text, True, GRIS_MEDIO) 
-            # f_key_rect = f_key_surf.get_rect(topleft=(menu_panel_rect.left + menu_padding_x + 20, current_menu_y_offset))
-            # pantalla.blit(f_key_surf, f_key_rect)
-            # current_menu_y_offset += f_key_surf.get_height() + 5 
-
-
-    # --- End Draw Main Menu Pop-up Panel ---
+    # --- OLD POPUP DRAWING LOGIC REMOVED ---
 
     # Avancemos y actualicemos la pantalla con lo que hemos dibujado.
+    menu.draw(pantalla)
     pygame.display.flip()
 
     # Limitamos a 60 fotogramas por segundo
